@@ -1,0 +1,23 @@
+# Dockerfile para desarrollo con hot-reload usando Air
+FROM golang:1.23-alpine
+
+WORKDIR /app
+
+# Instalar Air para hot-reload y otras herramientas
+RUN apk add --no-cache git curl
+
+# Instalar Air (versión compatible con Go 1.23)
+RUN go install github.com/air-verse/air@v1.52.3
+
+# Copiar go.mod y go.sum para cachear dependencias
+COPY go.mod go.sum ./
+RUN go mod download
+
+# El código fuente se montará como volumen
+# No necesitamos copiar el código aquí
+
+EXPOSE 8080
+
+# Air se ejecutará con el archivo de configuración .air.toml
+CMD ["air", "-c", ".air.toml"]
+

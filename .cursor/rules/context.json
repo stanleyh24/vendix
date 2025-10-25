@@ -1,0 +1,123 @@
+{
+    "contexts": [
+      {
+        "name": "Nuevo módulo backend",
+        "description": "Crea un nuevo módulo interno en Go para el backend del SaaS (ej. inventario, reportes, contabilidad).",
+        "prompt": [
+          "Crea un nuevo módulo en `internal/<modulo>` con la siguiente estructura:",
+          "- `models.go`: define las estructuras base del dominio.",
+          "- `repository.go`: funciones SQL puras usando pgx (sin ORM).",
+          "- `service.go`: lógica de negocio con validaciones.",
+          "- `handler.go`: endpoints HTTP con Fiber (GET, POST, PUT, DELETE).",
+          "- `routes.go`: registra rutas bajo `/api/v1/<modulo>`.",
+          "Usa SQL puro con parámetros posicionales ($1, $2, etc).",
+          "Usa `TenantMiddleware` para resolver schema multitenant (`SET search_path`).",
+          "Incluye ejemplos de consultas y respuestas JSON.",
+          "Agrega logs con zerolog y manejo de errores limpio."
+        ]
+      },
+      {
+        "name": "Nuevo endpoint backend",
+        "description": "Agrega un endpoint HTTP a un módulo existente del backend.",
+        "prompt": [
+          "Agrega un nuevo endpoint en Fiber dentro del módulo actual.",
+          "Incluye la ruta, método, parámetros esperados y respuesta JSON.",
+          "Usa SQL puro con pgx para acceder a PostgreSQL.",
+          "El endpoint debe funcionar con multitenancy (`SET search_path`).",
+          "Incluye validación de entrada y manejo de errores con Fiber.",
+          "Ejemplo: `POST /api/v1/invoices` o `GET /api/v1/customers/:id`."
+        ]
+      },
+      {
+        "name": "Nuevo repositorio SQL",
+        "description": "Crea un archivo repository.go con consultas SQL puras usando pgx.",
+        "prompt": [
+          "En este archivo, implementa funciones que ejecuten SQL puro (no sqlc).",
+          "Ejemplo: `GetInvoiceByID(ctx, db, id uuid.UUID)`, `CreateInvoice(ctx, db, data Invoice)`, etc.",
+          "Cada función debe usar parámetros posicionales y `pgxpool.Pool`.",
+          "Usa transacciones para operaciones que afecten varias tablas.",
+          "Incluye manejo de errores y cierre de filas (`rows.Close()`)."
+        ]
+      },
+      {
+        "name": "Nuevo componente frontend",
+        "description": "Crea un componente React con TypeScript para el frontend del SaaS.",
+        "prompt": [
+          "Crea un nuevo componente en `frontend/src/modules/<modulo>/components/`.",
+          "Usa React + TypeScript + TailwindCSS .",
+          "Debe manejar formularios con React Hook Form + Zod.",
+          "Usa axios (configurado con interceptores JWT y X-Tenant-ID) para acceder al backend.",
+          "Incluye feedback visual (loading, error, success) y tipado estricto de props.",
+          "Ejemplo: Formulario para crear una factura o listado de clientes."
+        ]
+      },
+      {
+        "name": "Nuevo hook frontend",
+        "description": "Crea un custom hook de React para encapsular lógica de negocio en el frontend.",
+        "prompt": [
+          "Crea un hook en `frontend/src/hooks/`.",
+          "Debe usar React Query o Zustand para manejo de estado asíncrono.",
+          "Incluye tipado de datos, manejo de errores, y retornos (data, isLoading, error).",
+          "Ejemplo: `useInvoices`, `useCustomers`, `useAuth`."
+        ]
+      },
+      {
+        "name": "Nuevo DTO / tipo compartido",
+        "description": "Crea tipos o interfaces TypeScript para sincronizar estructuras con el backend Go.",
+        "prompt": [
+          "Crea un archivo en `frontend/src/types/`.",
+          "Define interfaces que representen las respuestas o entidades del backend.",
+          "Ejemplo: `Invoice`, `Customer`, `AuthResponse`.",
+          "Mantén los nombres y tipos sincronizados con las estructuras de Go (camelCase)."
+        ]
+      },
+      {
+        "name": "Módulo completo frontend + backend",
+        "description": "Crea un nuevo módulo end-to-end (Go backend + React frontend).",
+        "prompt": [
+          "Crea un módulo completo que incluya:",
+          "- Backend: `/internal/<modulo>` con handler, service, repository y SQL puro.",
+          "- Frontend: `/frontend/src/modules/<modulo>` con componentes, hooks y tipos.",
+          "Incluye CRUD básico (listar, crear, actualizar, eliminar).",
+          "Usa multitenancy (header X-Tenant-ID) y JWT en todas las rutas.",
+          "Usa React Query para consumo del API y manejo de estados.",
+          "Usa TailwindCSS  para la interfaz.",
+          "Agrega validación de datos con Zod y manejo de errores."
+        ]
+      },
+      {
+        "name": "Integración DGII mock",
+        "description": "Crea un adaptador mock para simular el envío de facturas a la DGII.",
+        "prompt": [
+          "Crea un archivo `internal/dgii/mock_adapter.go`.",
+          "Define funciones que simulen validación, firma y envío de comprobantes electrónicos.",
+          "La función `SendToDGII(invoiceID uuid.UUID)` debe devolver una respuesta simulada con estatus aprobado o rechazado.",
+          "Incluye logs de la transacción y guarda el resultado en la base de datos.",
+          "Este mock servirá como base para conectar la integración real en producción."
+        ]
+      },
+      {
+        "name": "Integración Stripe webhooks",
+        "description": "Crea endpoint para manejar webhooks de Stripe.",
+        "prompt": [
+          "Crea un handler en `internal/payments/stripe_webhook.go`.",
+          "El endpoint será `POST /api/v1/webhooks/stripe`.",
+          "Verifica la firma del webhook usando `stripe.SignatureVerifyHeader`.",
+          "Maneja eventos como `invoice.payment_succeeded`, `customer.subscription.updated`.",
+          "Actualiza el estado del tenant y sus módulos (`plan_modules`)."
+        ]
+      },
+      {
+        "name": "Pruebas backend",
+        "description": "Crea pruebas unitarias para un módulo backend.",
+        "prompt": [
+          "Crea un archivo `_test.go` en el módulo correspondiente.",
+          "Usa `pgxmock` para simular la base de datos.",
+          "Incluye pruebas de éxito, error y edge cases.",
+          "Asegura que las consultas SQL y los parámetros sean correctos.",
+          "Usa `testify` para asserts."
+        ]
+      }
+    ]
+  }
+  

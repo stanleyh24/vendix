@@ -1,0 +1,49 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Air tmp directory
+tmp/
+
+# Go workspace file
+go.work
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules
+node_modules/
+
+# Frontend build
+frontend/dist
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

@@ -1,0 +1,201 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* Paleta de colores Vendix */
+  --vendix-orange: #FF6B00;
+  --vendix-orange-dark: #E66000;
+  --vendix-orange-light: #FF8533;
+  --carbon: #212121;
+  --neutral-light: #E6E6E6;
+  --neutral-lighter: #F5F5F5;
+  --saas-blue: #1877F2;
+  --saas-blue-dark: #1565D8;
+  --white: #FFFFFF;
+
+  color: var(--carbon);
+  background-color: var(--white);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--neutral-lighter);
+}
+
+/* Utilidades personalizadas */
+@layer components {
+  /* Botón principal con naranja Vendix */
+  .btn-primary {
+    @apply font-semibold py-2 px-4 rounded-lg transition-colors duration-200 text-white;
+    background-color: #FF6B00;
+  }
+  
+  .btn-primary:hover {
+    background-color: #E66000;
+  }
+
+  /* Botón secundario con azul SaaS */
+  .btn-secondary {
+    @apply font-semibold py-2 px-4 rounded-lg transition-colors duration-200 text-white;
+    background-color: #1877F2;
+  }
+  
+  .btn-secondary:hover {
+    background-color: #1565D8;
+  }
+
+  /* Botón outline */
+  .btn-outline {
+    @apply border-2 font-semibold py-2 px-4 rounded-lg transition-colors duration-200;
+    border-color: #FF6B00;
+    color: #FF6B00;
+  }
+  
+  .btn-outline:hover {
+    background-color: #FF6B00;
+    color: white;
+  }
+
+  /* Tarjeta */
+  .card {
+    @apply bg-white rounded-2xl shadow-md p-6 transition-shadow duration-200;
+    border: 1px solid #E6E6E6;
+  }
+  
+  .card:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Input estilizado */
+  .input-field {
+    @apply w-full px-4 py-2 rounded-lg transition-all duration-200;
+    border: 1px solid #E6E6E6;
+  }
+  
+  .input-field:focus {
+    outline: none;
+    border-color: transparent;
+    box-shadow: 0 0 0 2px #FF6B00;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+  }
+
+  .badge-orange {
+    @apply badge text-white;
+    background-color: #FF8533;
+  }
+
+  .badge-blue {
+    @apply badge text-white;
+    background-color: #1877F2;
+  }
+
+  /* Link */
+  .link {
+    @apply underline transition-colors duration-200;
+    color: #FF6B00;
+  }
+  
+  .link:hover {
+    color: #E66000;
+  }
+
+  /* Alertas y Feedback Visual */
+  .alert {
+    @apply rounded-2xl p-4 flex items-start gap-3 shadow-soft;
+  }
+
+  .alert-success {
+    @apply alert;
+    background-color: #E8F5E9;
+    border: 1px solid #00C853;
+    color: #1B5E20;
+  }
+
+  .alert-error {
+    @apply alert;
+    background-color: #FFEBEE;
+    border: 1px solid #D32F2F;
+    color: #B71C1C;
+  }
+
+  .alert-info {
+    @apply alert;
+    background-color: #E3F2FD;
+    border: 1px solid #1877F2;
+    color: #0D47A1;
+  }
+
+  .alert-warning {
+    @apply alert;
+    background-color: #FFF3E0;
+    border: 1px solid #FFA000;
+    color: #E65100;
+  }
+
+  /* Botones de feedback */
+  .btn-success {
+    @apply font-semibold py-2 px-4 rounded-lg transition-colors duration-200 text-white;
+    background-color: #00C853;
+  }
+  
+  .btn-success:hover {
+    background-color: #00A344;
+  }
+
+  .btn-error {
+    @apply font-semibold py-2 px-4 rounded-lg transition-colors duration-200 text-white;
+    background-color: #D32F2F;
+  }
+  
+  .btn-error:hover {
+    background-color: #B71C1C;
+  }
+
+  .btn-warning {
+    @apply font-semibold py-2 px-4 rounded-lg transition-colors duration-200 text-white;
+    background-color: #FFA000;
+  }
+  
+  .btn-warning:hover {
+    background-color: #FF8F00;
+  }
+
+  /* Badges de estado */
+  .badge-success {
+    @apply badge text-white;
+    background-color: #00C853;
+  }
+
+  .badge-error {
+    @apply badge text-white;
+    background-color: #D32F2F;
+  }
+
+  .badge-warning {
+    @apply badge;
+    background-color: #FFA000;
+    color: #FFFFFF;
+  }
+
+  .badge-info {
+    @apply badge text-white;
+    background-color: #1877F2;
+  }
+}
+

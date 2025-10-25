@@ -1,0 +1,73 @@
+═══════════════════════════════════════════════════════════════════
+  🚀 EJECUTAR MIGRACIONES DE tenant_config - GUÍA RÁPIDA
+═══════════════════════════════════════════════════════════════════
+
+ELIGE UNA OPCIÓN:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📍 OPCIÓN 1: FORMA MÁS FÁCIL (Recomendada)
+   
+   Ejecutar SQL directamente en TODOS los tenants:
+
+   $ ./scripts/migrate-all-tenants-sql.sh
+
+   ✅ No requiere servidor corriendo
+   ✅ Ejecuta en todos los tenants automáticamente
+   ✅ Muestra progreso y resumen
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📍 OPCIÓN 2: Con API (si el servidor está corriendo)
+
+   $ make migrate-tenants
+
+   ⚠️  Requiere que el servidor backend esté corriendo
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📍 OPCIÓN 3: Manual para UN tenant específico
+
+   Con SQL:
+   $ psql -h localhost -U postgres -d vendix \
+       -v schema=tenant_demo \
+       -f scripts/migrate-tenant-direct.sql
+
+   Con API (servidor corriendo):
+   $ make init-tenant ID={TENANT_ID}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DESPUÉS DE EJECUTAR:
+
+✅ Verificar en la base de datos:
+   $ psql -h localhost -U postgres -d vendix -c \
+       "SELECT count(*) FROM tenant_demo.tenant_config;"
+   
+   Debería mostrar: 1
+
+✅ Verificar en el frontend:
+   - Ir a http://localhost:5173/settings
+   - Debería cargar sin errores
+
+═══════════════════════════════════════════════════════════════════
+
+💡 SOLUCIÓN DE PROBLEMAS:
+
+   Si "Permission denied":
+   $ chmod +x scripts/*.sh
+
+   Si "Connection refused":
+   $ make dev-up  # Iniciar base de datos
+
+   Si "already exists":
+   ✅ ¡Perfecto! Ya está migrado
+
+═══════════════════════════════════════════════════════════════════
+
+📚 DOCUMENTACIÓN COMPLETA: 
+   - EJECUTAR_MIGRACIONES.md (guía detallada)
+   - MIGRACION_TENANT_CONFIG.md (detalles técnicos)
+   
+═══════════════════════════════════════════════════════════════════
+

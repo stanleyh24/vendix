@@ -1,0 +1,149 @@
+---
+alwaysApply: true
+---
+{
+  "name": "SaaS Facturación Electrónica RD",
+  "description": "Reglas para un SaaS de facturación electrónica para República Dominicana usando Go (Fiber + pgx + SQL puro), React + TypeScript y PostgreSQL multitenant (schema por cliente). Monolito modular, sin GORM ni sqlc.",
+  "language": ["go", "typescript", "sql"],
+  "rules": [
+    {
+      "match": "go",
+      "instructions": [
+        "Usar Go 1.22+.",
+        "Framework backend: Fiber (github.com/gofiber/fiber/v2).",
+        "Driver de base de datos: pgx/v5 (github.com/jackc/pgx/v5).",
+        "No usar ORM ni generadores automáticos (sin GORM, sin SQLC).",
+        "Usar SQL puro con db.Query, db.QueryRow y db.Exec para todas las operaciones.",
+        "Arquitectura monolito modular: cada dominio en `internal/<modulo>` con subpaquetes `handler`, `service`, `repository`, `models`.",
+        "Cada tenant tiene su propio schema. Middleware `TenantFromHeaderOrSubdomain` debe hacer `SET search_path TO <schema>` antes de cada request.",
+        "Inyección explícita de dependencias (no variables globales).",
+        "Logging estructurado con zerolog (github.com/rs/zerolog).",
+        "Autenticación con JWT + refresh tokens.",
+        "Hash de contraseñas con bcrypt (golang.org/x/crypto/bcrypt).",
+        "Transacciones explícitas para operaciones críticas (facturación, pagos).",
+        "Escribir comentarios GoDoc en funciones exportadas.",
+        "Crear tests unitarios con pgxmock o base temporal para integración.",
+        "Evitar pánico o logs silenciosos; manejar errores explícitamente."
+      ]
+    },
+    {
+      "match": "sql",
+      "instructions": [
+        "SQL puro compatible con PostgreSQL 15+.",
+        "Usar parámetros posicionales ($1, $2, etc).",
+        "Evitar tipos serial; usar 'generated always as identity'.",
+        "Usar uuid para claves primarias cuando sea apropiado.",
+        "Definir índices, claves foráneas y constraints explícitamente.",
+        "Usar transacciones (BEGIN/COMMIT/ROLLBACK) en operaciones complejas.",
+        "Respetar snake_case en tablas y columnas."
+      ]
+    },
+    {
+      "match": "typescript",
+      "instructions": [
+        "Frontend en React + TypeScript + Vite.",
+        "Activar modo estricto en tsconfig (`strict: true`).",
+        "Organizar código por módulos en `src/modules/<modulo>` (auth, invoices, customers, etc).",
+        "Usar React Query o Zustand para manejo de estado asíncrono.",
+        "Validar formularios con React Hook Form + Zod.",
+        "Diseñar la interfaz con TailwindCSS + shadcn/ui.",
+        "Implementar tipado fuerte para DTOs, usando interfaces compartidas (por ejemplo `types/api.ts`).",
+        "Toda llamada al backend debe incluir `X-Tenant-ID` en los headers.",
+        "Usar axios con interceptores configurados para JWT + manejo de errores.",
+        "Mantener componentes desacoplados, reusables y documentados.",
+        "Usar eslint y prettier con estilo Airbnb.",
+        "Usar lazy loading (React.lazy) para módulos pesados.",
+        "Rutas frontend deben reflejar módulos backend (`/auth`, `/invoices`, `/customers`, etc.)."
+      ]
+    },
+    {
+      "match": "global",
+      "instructions": [
+        "Arquitectura: monolito modular multitenant (schema por cliente).",
+        "Seguridad: JWT + refresh tokens + control por plan (`plan_modules`).",
+        "Módulos principales: Auth, Tenant, Clientes, Productos, Facturación, Pagos, DGII (mock), Reportes.",
+        "Facturación electrónica: generar XML, firmar digitalmente y enviar a DGII.",
+        "Integrar Stripe para cobros y suscripciones; manejar webhooks verificados con firma.",
+        "Registrar logs de auditoría en tabla `audit_logs`.",
+        "Dockerizar todo: backend, frontend, Postgres y Redis.",
+        "Usar Swagger (github.com/swaggo/fiber-swagger) para documentar la API.",
+        "Seguir convención: snake_case en DB, camelCase en Go, PascalCase en TypeScript.",
+        "Usar migraciones SQL en `db/migrations/public` y `db/migrations/tenant`.",
+        "No mezclar lógica de negocio con controladores HTTP.",
+        "Mantener separación clara entre capas: handler → service → repository.",
+        "Todo módulo debe poder desactivarse según plan del cliente (`plan_modules`)."
+      ]
+    }
+  ]
+}
+
+📁 Estructura de proyecto recomendada
+
+/cmd/app/main.go
+/internal/
+  auth/
+  tenant/
+  invoicing/
+  payments/
+  catalog/
+  planmodules/
+  reports/
+  shared/
+      middleware/
+      db/
+      utils/
+db/
+  migrations/
+    public/
+    tenant/
+frontend/
+  src/
+    modules/
+      auth/
+      invoices/
+      customers/
+      products/
+      dashboard/
+    components/
+    hooks/
+    lib/
+    types/
+
+🔧 Recomendaciones de integración
+🔹 Backend
+
+    Conexión a PostgreSQL:
+
+pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+
+Middleware para cambiar de schema:
+
+    func TenantMiddleware(c *fiber.Ctx) error {
+        tenant := c.Get("X-Tenant-ID")
+        if tenant == "" {
+            return fiber.ErrUnauthorized
+        }
+        _, err := db.Exec(context.Background(), fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(tenant)))
+        if err != nil {
+            return fiber.ErrInternalServerError
+        }
+        return c.Next()
+    }
+
+🔹 Frontend
+
+    Configuración de Axios:
+
+import axios from "axios";
+
+export const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL,
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  const tenant = localStorage.getItem("tenant");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (tenant) config.headers["X-Tenant-ID"] = tenant;
+  return config;
+});
