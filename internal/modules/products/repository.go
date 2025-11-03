@@ -20,30 +20,30 @@ func NewRepository(db *database.DB) *Repository {
 
 func (r *Repository) Create(ctx context.Context, schema string, product *Product) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s.products (id, code, name, description, product_type, unit, price, cost, tax_rate, stock_quantity, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO %s.products (id, code, name, description, product_type, unit, price, cost, tax_rate, stock_quantity, supplier_id, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`, schema)
-	_, err := r.db.ExecContext(ctx, query, product.ID, product.Code, product.Name, product.Description, product.ProductType, product.Unit, product.Price, product.Cost, product.TaxRate, product.StockQuantity, product.IsActive, product.CreatedAt, product.UpdatedAt)
+	_, err := r.db.ExecContext(ctx, query, product.ID, product.Code, product.Name, product.Description, product.ProductType, product.Unit, product.Price, product.Cost, product.TaxRate, product.StockQuantity, product.SupplierID, product.IsActive, product.CreatedAt, product.UpdatedAt)
 	return err
 }
 
 func (r *Repository) GetByID(ctx context.Context, schema string, id uuid.UUID) (*Product, error) {
 	var product Product
-	query := fmt.Sprintf(`SELECT id, code, name, description, product_type, unit, price, cost, tax_rate, stock_quantity, is_active, created_at, updated_at FROM %s.products WHERE id = $1`, schema)
+	query := fmt.Sprintf(`SELECT id, code, name, description, product_type, unit, price, cost, tax_rate, stock_quantity, supplier_id, is_active, created_at, updated_at FROM %s.products WHERE id = $1`, schema)
 	err := r.db.GetContext(ctx, &product, query, id)
 	return &product, err
 }
 
 func (r *Repository) List(ctx context.Context, schema string) ([]*Product, error) {
 	var products []*Product
-	query := fmt.Sprintf(`SELECT id, code, name, description, product_type, unit, price, cost, tax_rate, stock_quantity, is_active, created_at, updated_at FROM %s.products ORDER BY name ASC`, schema)
+	query := fmt.Sprintf(`SELECT id, code, name, description, product_type, unit, price, cost, tax_rate, stock_quantity, supplier_id, is_active, created_at, updated_at FROM %s.products ORDER BY name ASC`, schema)
 	err := r.db.SelectContext(ctx, &products, query)
 	return products, err
 }
 
 func (r *Repository) Update(ctx context.Context, schema string, product *Product) error {
-	query := fmt.Sprintf(`UPDATE %s.products SET name = $1, description = $2, unit = $3, price = $4, cost = $5, tax_rate = $6, stock_quantity = $7, is_active = $8, updated_at = $9 WHERE id = $10`, schema)
-	_, err := r.db.ExecContext(ctx, query, product.Name, product.Description, product.Unit, product.Price, product.Cost, product.TaxRate, product.StockQuantity, product.IsActive, product.UpdatedAt, product.ID)
+	query := fmt.Sprintf(`UPDATE %s.products SET name = $1, description = $2, unit = $3, price = $4, cost = $5, tax_rate = $6, stock_quantity = $7, supplier_id = $8, is_active = $9, updated_at = $10 WHERE id = $11`, schema)
+	_, err := r.db.ExecContext(ctx, query, product.Name, product.Description, product.Unit, product.Price, product.Cost, product.TaxRate, product.StockQuantity, product.SupplierID, product.IsActive, product.UpdatedAt, product.ID)
 	return err
 }
 

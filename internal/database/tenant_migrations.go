@@ -654,5 +654,39 @@ func getTenantMigrations() []Migration {
 				CREATE INDEX idx_sale_lines_product_id ON sale_lines(product_id);
 			`,
 		},
+		{
+			Version: 22,
+			Name:    "create_suppliers_table",
+			SQL: `
+				CREATE TABLE IF NOT EXISTS suppliers (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					name VARCHAR(255) NOT NULL,
+					tax_id VARCHAR(50),
+					email VARCHAR(255),
+					phone VARCHAR(50),
+					address TEXT,
+					city VARCHAR(100),
+					state VARCHAR(100),
+					postal_code VARCHAR(20),
+					country VARCHAR(2) DEFAULT 'DO',
+					is_active BOOLEAN DEFAULT true,
+					metadata JSONB DEFAULT '{}',
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX IF NOT EXISTS idx_suppliers_name ON suppliers(name);
+				CREATE INDEX IF NOT EXISTS idx_suppliers_tax_id ON suppliers(tax_id);
+			`,
+		},
+		{
+			Version: 23,
+			Name:    "add_supplier_id_to_products",
+			SQL: `
+				-- Agregar relación opcional de proveedor a productos
+				ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id UUID REFERENCES suppliers(id);
+				CREATE INDEX IF NOT EXISTS idx_products_supplier_id ON products(supplier_id);
+			`,
+		},
 	}
 }

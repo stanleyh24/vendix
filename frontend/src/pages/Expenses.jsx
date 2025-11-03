@@ -325,76 +325,59 @@ export default function Expenses() {
           )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredExpenses.map((expense) => (
-            <div
-              key={expense.id}
-              className="card hover:shadow-card-hover transition-all duration-200"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className={`badge ${getCategoryColor(expense.category)} text-white`}>
-                      {getCategoryLabel(expense.category)}
-                    </span>
-                    <div className="flex items-center gap-1 text-sm text-gray-500">
-                      <Calendar className="w-4 h-4" />
-                      {new Date(expense.date).toLocaleDateString('es-DO', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
-                    </div>
-                  </div>
-
-                  <h3 className="text-lg font-semibold text-[#212121] mb-2">
-                    {expense.description}
-                  </h3>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Tag className="w-4 h-4 text-gray-400" />
-                      <span className="text-gray-600">
-                        Proveedor: <span className="font-medium">{expense.supplier}</span>
-                      </span>
-                    </div>
-                    {expense.invoice_number && (
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-600">
-                          Factura: <span className="font-medium">{expense.invoice_number}</span>
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-[#D32F2F]">
-                      ${expense.amount.toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="flex gap-1">
+        <div className="card p-0 overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Factura</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto (RD$)</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredExpenses.map((expense) => (
+                <tr key={expense.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    {new Date(expense.date).toLocaleDateString('es-DO', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`badge ${getCategoryColor(expense.category)} text-white`}>{getCategoryLabel(expense.category)}</span>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-[#212121]">{expense.description}</td>
+                  <td className="px-6 py-4 text-sm text-gray-700">{expense.supplier}</td>
+                  <td className="px-6 py-4 text-sm text-gray-700">{expense.invoice_number || '-'}</td>
+                  <td className="px-6 py-4 text-sm text-right font-semibold text-[#D32F2F]">{expense.amount.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                     <button
                       onClick={() => handleEdit(expense)}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                      className="p-2 hover:bg-gray-100 rounded-lg mr-1"
                       title="Editar"
                     >
                       <Edit2 className="w-4 h-4 text-gray-600" />
                     </button>
                     <button
                       onClick={() => handleDelete(expense)}
-                      className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                      className="p-2 hover:bg-red-50 rounded-lg"
                       title="Eliminar"
                     >
                       <Trash2 className="w-4 h-4 text-red-600" />
                     </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-gray-50">
+              <tr>
+                <td className="px-6 py-3 text-sm font-medium text-gray-700" colSpan={5}>Total</td>
+                <td className="px-6 py-3 text-sm font-bold text-right text-[#D32F2F]">{calculateTotal().toFixed(2)}</td>
+                <td className="px-6 py-3" />
+              </tr>
+            </tfoot>
+          </table>
         </div>
       )}
 

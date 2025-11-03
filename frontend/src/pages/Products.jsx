@@ -5,6 +5,7 @@ import Alert from '../components/Alert';
 
 export default function Products() {
   const [products, setProducts] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActive, setFilterActive] = useState('all'); // all, active, inactive
@@ -24,11 +25,13 @@ export default function Products() {
     cost: '',
     tax_rate: '0.18', // 18% ITBIS RD por defecto
     stock_quantity: '0',
+    supplier_id: '',
   });
 
   // Cargar productos
   useEffect(() => {
     loadProducts();
+    loadSuppliers();
   }, []);
 
   const loadProducts = async () => {
@@ -40,6 +43,15 @@ export default function Products() {
       showAlert('error', 'Error al cargar productos', error.response?.data?.error || 'Error desconocido');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSuppliers = async () => {
+    try {
+      const response = await api.get('/suppliers');
+      setSuppliers(response.data || []);
+    } catch (error) {
+      // opcional: no bloquear si falla
     }
   };
 
@@ -73,6 +85,7 @@ export default function Products() {
       cost: '',
       tax_rate: '0.18',
       stock_quantity: '0',
+      supplier_id: '',
     });
     setShowModal(true);
   };
@@ -90,6 +103,7 @@ export default function Products() {
       cost: product.cost ? product.cost.toString() : '',
       tax_rate: product.tax_rate.toString(),
       stock_quantity: product.stock_quantity?.toString() || '0',
+      supplier_id: product.supplier_id || '',
     });
     setShowModal(true);
   };
@@ -108,6 +122,7 @@ export default function Products() {
       cost: formData.cost ? parseFloat(formData.cost) : null,
       tax_rate: parseFloat(formData.tax_rate),
       stock_quantity: parseFloat(formData.stock_quantity) || 0,
+      supplier_id: formData.supplier_id || null,
     };
 
     try {
@@ -263,24 +278,24 @@ export default function Products() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {filteredProducts.map((product) => (
             <div
               key={product.id}
-              className="card hover:shadow-card-hover transition-all duration-200"
+              className="card p-4 hover:shadow-card-hover transition-all duration-200"
             >
               {/* Header del card */}
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <Box className="w-5 h-5 text-[#FF6B00]" />
-                    <span className="text-xs font-mono text-gray-500">{product.code}</span>
+                    <Box className="w-4 h-4 text-[#FF6B00]" />
+                    <span className="text-[11px] font-mono text-gray-500">{product.code}</span>
                   </div>
-                  <h3 className="text-lg font-semibold text-[#212121]">
+                  <h3 className="text-base font-semibold text-[#212121]">
                     {product.name}
                   </h3>
                   {product.description && (
-                    <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                    <p className="text-xs text-gray-600 mt-1 line-clamp-2">
                       {product.description}
                     </p>
                   )}
@@ -288,14 +303,14 @@ export default function Products() {
                 <div className="flex gap-1">
                   <button
                     onClick={() => handleEdit(product)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                     title="Editar"
                   >
                     <Edit2 className="w-4 h-4 text-gray-600" />
                   </button>
                   <button
                     onClick={() => handleDelete(product)}
-                    className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"
                     title="Eliminar"
                   >
                     <Trash2 className="w-4 h-4 text-red-600" />
@@ -304,7 +319,7 @@ export default function Products() {
               </div>
 
               {/* Info del producto */}
-              <div className="space-y-2 mb-4">
+              <div className="space-y-1.5 mb-3">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600">Tipo:</span>
                   <span className="font-medium capitalize">{product.product_type}</span>
@@ -321,13 +336,13 @@ export default function Products() {
                       product.stock_quantity <= 10 ? 'text-yellow-600' :
                       'text-[#00C853]'
                     }`}>
-                      {product.stock_quantity.toFixed(2)} {product.unit}
+                      {product.stock_quantity.toFixed(2)}
                     </span>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600 text-sm">Precio:</span>
-                  <span className="text-xl font-bold text-[#FF6B00]">
+                  <span className="text-lg font-bold text-[#FF6B00]">
                     ${product.price.toFixed(2)}
                   </span>
                 </div>
@@ -344,7 +359,7 @@ export default function Products() {
               </div>
 
               {/* Footer del card */}
-              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                 <button
                   onClick={() => toggleActive(product)}
                   className={`badge ${
@@ -419,8 +434,8 @@ export default function Products() {
                 />
               </div>
 
-              {/* Tipo y Unidad */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Tipo, Unidad y Proveedor */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#212121] mb-2">
                     Tipo *
@@ -455,6 +470,22 @@ export default function Products() {
                     <option value="hora">Hora</option>
                     <option value="dia">Día</option>
                     <option value="mes">Mes</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[#212121] mb-2">
+                    Proveedor
+                  </label>
+                  <select
+                    value={formData.supplier_id}
+                    onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
+                    className="input-field"
+                  >
+                    <option value="">Sin proveedor</option>
+                    {suppliers.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>

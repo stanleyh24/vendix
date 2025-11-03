@@ -8,17 +8,17 @@ help: ## Show this help message
 
 build: ## Build the application
 	@echo "Building API..."
-	@go build -o bin/api ./cmd/api
+	@go build -buildvcs=false -o bin/api ./cmd/api
 	@echo "Building Worker..."
-	@go build -o bin/worker ./cmd/worker
+	@go build -buildvcs=false -o bin/worker ./cmd/worker
 
 run-api: ## Run the API server
 	@echo "Running API server..."
-	@go run ./cmd/api/main.go
+	@GOFLAGS="-buildvcs=false" go run ./cmd/api/main.go
 
 run-worker: ## Run the worker
 	@echo "Running worker..."
-	@go run ./cmd/worker/main.go
+	@GOFLAGS="-buildvcs=false" go run ./cmd/worker/main.go
 
 test: ## Run tests
 	@echo "Running tests..."

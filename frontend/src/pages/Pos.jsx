@@ -14,7 +14,7 @@ const GENERIC_CUSTOMER = {
   is_generic: true
 };
 
-export default function Sales() {
+export default function Pos() {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -97,7 +97,6 @@ export default function Sales() {
       setCart([...cart, { product, quantity: 1 }]);
     }
     
-    setShowProductModal(false);
     setSearchProduct('');
   };
 
@@ -150,9 +149,8 @@ export default function Sales() {
     setLoading(true);
     try {
       const saleData = {
-        // Si no hay cliente seleccionado, se enviará null y el backend usará el cliente genérico
         customer_id: selectedCustomer ? selectedCustomer.id : null,
-        payment_type: paymentMethod, // cash, card, transfer, check
+        payment_type: paymentMethod,
         notes: `Venta procesada desde POS - ${paymentMethod}`,
         lines: cart.map(item => ({
           product_id: item.product.id,
@@ -164,14 +162,9 @@ export default function Sales() {
       };
 
       const response = await api.post('/sales', saleData);
-      
-      // Guardar el ID de la factura creada automáticamente
       setCreatedInvoiceId(response.data.invoice_id);
-      
-      // Cerrar modal de checkout y mostrar modal de éxito
       setShowCheckoutModal(false);
       setShowSuccessModal(true);
-      
     } catch (error) {
       showAlert('error', 'Error al procesar venta', error.response?.data?.error || 'Error desconocido');
     } finally {
@@ -190,13 +183,11 @@ export default function Sales() {
     showAlert('success', 'Listo', 'Puedes comenzar una nueva venta');
   };
 
-  // Imprimir factura
   const printInvoice = () => {
     setShowSuccessModal(false);
     setShowInvoicePrint(true);
   };
 
-  // Limpiar venta
   const clearSale = () => {
     setCart([]);
     setSelectedCustomer(null);
@@ -779,4 +770,3 @@ export default function Sales() {
     </div>
   );
 }
-

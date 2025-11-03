@@ -11,6 +11,7 @@ DELETE FROM payment_allocations;
 DELETE FROM payments;
 DELETE FROM products;
 DELETE FROM customers;
+DELETE FROM suppliers;
 
 -- ====================
 -- CLIENTES
@@ -27,6 +28,39 @@ VALUES
   (gen_random_uuid(), 'Farmacia Moderna', 'info@farmaciamoderna.do', '809-555-0401', '130-77665-5', 'Av. Abraham Lincoln #234', 'business', true, NOW(), NOW()),
   (gen_random_uuid(), 'Ana Martínez', 'ana.martinez@email.com', '809-555-0104', '001-3332221-1', 'Naco, Santo Domingo', 'individual', true, NOW(), NOW()),
   (gen_random_uuid(), 'Gastos Generales', 'gastos@interno.local', NULL, '999-9999999-9', 'Interno', 'business', true, NOW(), NOW());
+
+-- ====================
+-- PROVEEDORES
+-- ====================
+
+INSERT INTO suppliers (id, name, tax_id, email, phone, address, city, state, postal_code, country, is_active, created_at, updated_at)
+VALUES
+  (gen_random_uuid(), 'Suministros Oficina SRL', '1-31-000001', 'contacto@suministrosoficina.do', '809-555-1001', 'Av. 27 de Febrero #100', 'Santo Domingo', 'DN', '10109', 'DO', true, NOW(), NOW()),
+  (gen_random_uuid(), 'Tecnología Caribe SAS', '1-30-000002', 'ventas@tec-caribe.do', '809-555-1002', 'Av. Churchill #250', 'Santo Domingo', 'DN', '10147', 'DO', true, NOW(), NOW()),
+  (gen_random_uuid(), 'Servicios de Limpieza CleanPro', '1-32-000003', 'info@cleanpro.do', '809-555-1003', 'Calle Máximo Gómez #45', 'Santo Domingo', 'DN', '10112', 'DO', true, NOW(), NOW()),
+  (gen_random_uuid(), 'Redes y Telecom SRL', '1-33-000004', 'soporte@redestelecom.do', '809-555-1004', 'Av. Sarasota #350', 'Santo Domingo', 'DN', '10148', 'DO', true, NOW(), NOW());
+
+-- Capturar IDs de proveedores para asociarlos a productos
+DO $$
+DECLARE
+  prov_oficina UUID;
+  prov_tecnologia UUID;
+  prov_limpieza UUID;
+  prov_telecom UUID;
+BEGIN
+  SELECT id INTO prov_oficina FROM suppliers WHERE name = 'Suministros Oficina SRL' LIMIT 1;
+  SELECT id INTO prov_tecnologia FROM suppliers WHERE name = 'Tecnología Caribe SAS' LIMIT 1;
+  SELECT id INTO prov_limpieza FROM suppliers WHERE name = 'Servicios de Limpieza CleanPro' LIMIT 1;
+  SELECT id INTO prov_telecom FROM suppliers WHERE name = 'Redes y Telecom SRL' LIMIT 1;
+
+  -- Asociaciones por categoría de producto (por código)
+  UPDATE products SET supplier_id = prov_tecnologia WHERE code LIKE 'LAPTOP-%' OR code IN ('MONITOR-001','MOUSE-001','KEYBOARD-001');
+  UPDATE products SET supplier_id = prov_oficina   WHERE code IN ('PAPER-001','PEN-001','FOLDER-001');
+  UPDATE products SET supplier_id = prov_tecnologia WHERE code IN ('SERV-002'); -- desarrollo web
+  UPDATE products SET supplier_id = prov_telecom   WHERE code IN ('SERV-003'); -- soporte técnico
+  UPDATE products SET supplier_id = prov_oficina   WHERE code IN ('SERV-001'); -- consultoría (genérica)
+  UPDATE products SET supplier_id = prov_oficina   WHERE code IN ('FOOD-001','FOOD-002');
+END $$;
 
 -- ====================
 -- PRODUCTOS
@@ -229,6 +263,8 @@ END $$;
 
 -- Verificar datos insertados
 SELECT 'Clientes insertados:' as descripcion, COUNT(*) as cantidad FROM customers
+UNION ALL
+SELECT 'Proveedores insertados:', COUNT(*) FROM suppliers
 UNION ALL
 SELECT 'Productos insertados:', COUNT(*) FROM products
 UNION ALL

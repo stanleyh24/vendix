@@ -86,12 +86,13 @@ const (
 	PaymentTypeCard     PaymentType = "card"     // Tarjeta
 	PaymentTypeTransfer PaymentType = "transfer" // Transferencia
 	PaymentTypeCheck    PaymentType = "check"    // Cheque
+	PaymentTypeMixed    PaymentType = "mixed"    // Mixto (combinación de métodos)
 )
 
 // IsValidPaymentType checks if the payment type is valid
 func (p PaymentType) IsValid() bool {
 	switch p {
-	case PaymentTypeCash, PaymentTypeCard, PaymentTypeTransfer, PaymentTypeCheck:
+	case PaymentTypeCash, PaymentTypeCard, PaymentTypeTransfer, PaymentTypeCheck, PaymentTypeMixed:
 		return true
 	default:
 		return false

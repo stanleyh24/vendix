@@ -24,9 +24,10 @@ export default function Layout() {
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Ventas', href: '/sales', icon: ShoppingCart },
+    { name: 'Punto de Venta', href: '/pos', icon: ShoppingCart },
     { name: 'Historial Ventas', href: '/sales-management', icon: BarChart3 },
     { name: 'Clientes', href: '/customers', icon: Users },
+    { name: 'Proveedores', href: '/suppliers', icon: Users },
     { name: 'Inventario', href: '/products', icon: Package },
     { name: 'Gastos', href: '/expenses', icon: Receipt },
     { name: 'Facturación', href: '/invoices', icon: FileText },

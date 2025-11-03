@@ -32,6 +32,7 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateProductR
 		Cost:          req.Cost,
 		TaxRate:       req.TaxRate,
 		StockQuantity: req.StockQuantity,
+		SupplierID:    req.SupplierID,
 		IsActive:      true,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
@@ -95,6 +96,9 @@ func (s *Service) Update(ctx context.Context, schema, id string, req *UpdateProd
 	}
 	if req.StockQuantity != nil {
 		product.StockQuantity = *req.StockQuantity
+	}
+	if req.SupplierID != nil {
+		product.SupplierID = req.SupplierID
 	}
 	if req.IsActive != nil {
 		product.IsActive = *req.IsActive

@@ -10,6 +10,7 @@ require (
 	github.com/jackc/pgx/v5 v5.5.1
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/joho/godotenv v1.5.1
+	github.com/jung-kurt/gofpdf v1.16.2
 	github.com/stripe/stripe-go/v76 v76.16.0
 	github.com/swaggo/fiber-swagger v1.3.0
 	go.uber.org/zap v1.26.0

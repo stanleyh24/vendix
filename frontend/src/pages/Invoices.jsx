@@ -104,9 +104,21 @@ export default function Invoices() {
     }
   };
 
-  const handleDownloadInvoice = (invoice) => {
-    showAlert('info', 'Descargando', `Generando PDF de factura ${invoice.invoice_number}`);
-    // Aquí se generará el PDF
+  const handleDownloadInvoice = async (invoice) => {
+    try {
+      // Usa el cliente axios ya configurado con Authorization y X-Tenant-ID
+      const response = await api.get(`/invoices/${invoice.id}/pdf`, { responseType: 'blob' });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `invoice-${invoice.invoice_number}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      const message = err.response?.data?.error || 'No se pudo descargar el PDF';
+      showAlert('error', 'Error', message);
+    }
   };
 
   // Ver detalles de factura
@@ -324,125 +336,79 @@ export default function Invoices() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredInvoices.map((invoice) => (
-            <div
-              key={invoice.id}
-              className="card hover:shadow-card-hover transition-all duration-200"
-            >
-              <div className="flex items-start justify-between">
-                {/* Info principal */}
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="font-mono font-bold text-lg text-[#FF6B00]">
-                      {invoice.invoice_number}
-                    </span>
-                    <span className={getStatusBadge(invoice.status)}>
-                      {getStatusLabel(invoice.status)}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <User className="w-4 h-4 text-gray-400" />
-                        <div>
-                          <p className="font-semibold text-[#212121]">{invoice.customer.name}</p>
-                          <p className="text-sm text-gray-600">{invoice.customer.tax_id}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-400" />
-                        <div>
-                          <p className="text-sm text-gray-600">
-                            Emisión: <span className="font-medium">{new Date(invoice.date).toLocaleDateString('es-DO')}</span>
-                          </p>
-                          <p className="text-sm text-gray-600">
-                            Vence: <span className="font-medium">{new Date(invoice.due_date).toLocaleDateString('es-DO')}</span>
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Items de la factura */}
-                  <div className="bg-[#F5F5F5] rounded-lg p-3 mb-3">
-                    <p className="text-xs font-semibold text-gray-600 mb-2">ITEMS:</p>
-                    <div className="space-y-1">
-                      {invoice.items.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between text-sm">
-                          <span className="text-gray-700">
-                            {item.quantity}x {item.product_name}
-                          </span>
-                          <span className="font-medium text-gray-900">
-                            ${(item.quantity * item.unit_price).toFixed(2)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Totales */}
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div>
-                      <p className="text-xs text-gray-600">Subtotal</p>
-                      <p className="font-semibold text-gray-900">${invoice.subtotal.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-600">ITBIS</p>
-                      <p className="font-semibold text-gray-900">${invoice.tax.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-600">Total</p>
-                      <p className="font-bold text-lg text-[#FF6B00]">${invoice.total.toFixed(2)}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Acciones */}
-                <div className="flex flex-col gap-2 ml-4">
-                  <button
-                    onClick={() => handleViewDetails(invoice)}
-                    className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
-                    title="Ver detalles"
-                  >
-                    <Eye className="w-5 h-5 text-blue-600" />
-                  </button>
-                  
-                  <button
-                    onClick={() => handleDownloadInvoice(invoice)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                    title="Descargar PDF"
-                  >
-                    <Download className="w-5 h-5 text-gray-600" />
-                  </button>
-                  
-                  {invoice.status !== 'sent' && invoice.status !== 'cancelled' && invoice.status !== 'paid' && (
+        <div className="card p-0 overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Factura</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emisión</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vence</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">ITBIS</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredInvoices.map((invoice) => (
+                <tr key={invoice.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono font-semibold text-[#FF6B00]">{invoice.invoice_number}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-[#212121]">{invoice.customer.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{new Date(invoice.date).toLocaleDateString('es-DO')}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{new Date(invoice.due_date).toLocaleDateString('es-DO')}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={getStatusBadge(invoice.status)}>{getStatusLabel(invoice.status)}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{invoice.subtotal.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{invoice.tax.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-[#FF6B00]">{invoice.total.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                     <button
-                      onClick={() => handleSendInvoice(invoice)}
-                      className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Enviar a DGII"
+                      onClick={() => handleViewDetails(invoice)}
+                      className="p-2 hover:bg-blue-50 rounded-lg mr-1"
+                      title="Ver detalles"
                     >
-                      <Send className="w-5 h-5 text-blue-600" />
+                      <Eye className="w-4 h-4 text-blue-600" />
                     </button>
-                  )}
-                  
-                  {invoice.status !== 'cancelled' && invoice.status !== 'paid' && (
                     <button
-                      onClick={() => handleCancelInvoice(invoice)}
-                      className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Anular factura"
+                      onClick={() => handleDownloadInvoice(invoice)}
+                      className="p-2 hover:bg-gray-100 rounded-lg mr-1"
+                      title="Descargar PDF"
                     >
-                      <XCircle className="w-5 h-5 text-red-600" />
+                      <Download className="w-4 h-4 text-gray-600" />
                     </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
+                    {invoice.status !== 'sent' && invoice.status !== 'cancelled' && invoice.status !== 'paid' && (
+                      <button
+                        onClick={() => handleSendInvoice(invoice)}
+                        className="p-2 hover:bg-blue-50 rounded-lg mr-1"
+                        title="Enviar a DGII"
+                      >
+                        <Send className="w-4 h-4 text-blue-600" />
+                      </button>
+                    )}
+                    {invoice.status !== 'cancelled' && invoice.status !== 'paid' && (
+                      <button
+                        onClick={() => handleCancelInvoice(invoice)}
+                        className="p-2 hover:bg-red-50 rounded-lg"
+                        title="Anular factura"
+                      >
+                        <XCircle className="w-4 h-4 text-red-600" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-gray-50">
+              <tr>
+                <td className="px-6 py-3 text-sm font-medium text-gray-700" colSpan={7}>Total listado</td>
+                <td className="px-6 py-3 text-sm font-bold text-right text-[#FF6B00]">{totals.total.toFixed(2)}</td>
+                <td className="px-6 py-3" />
+              </tr>
+            </tfoot>
+          </table>
         </div>
       )}
 

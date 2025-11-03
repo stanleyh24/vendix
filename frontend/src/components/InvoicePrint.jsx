@@ -46,8 +46,8 @@ export default function InvoicePrint({ invoiceId, onClose }) {
     const date = new Date(dateString);
     return date.toLocaleDateString('es-DO', {
       year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+      month: '2-digit',
+      day: '2-digit'
     });
   };
 
@@ -86,7 +86,7 @@ export default function InvoicePrint({ invoiceId, onClose }) {
 
   return (
     <>
-      {/* Estilos para impresión */}
+      {/* Estilos para impresión POS (80mm) */}
       <style>{`
         @media print {
           body * {
@@ -100,13 +100,20 @@ export default function InvoicePrint({ invoiceId, onClose }) {
             position: absolute;
             left: 0;
             top: 0;
-            width: 100%;
+            width: 80mm !important;
+            max-width: 80mm !important;
+            padding: 5mm !important;
+            font-size: 10pt !important;
           }
           .no-print {
             display: none !important;
           }
           .print-break {
             page-break-after: always;
+          }
+          @page {
+            size: 80mm auto;
+            margin: 0;
           }
         }
       `}</style>
@@ -149,195 +156,95 @@ export default function InvoicePrint({ invoiceId, onClose }) {
             </div>
           )}
 
-          {/* Contenido de la factura */}
-          <div id="invoice-print-content" className="p-8 bg-white">
-            {/* Header de la factura */}
-            <div className="border-b-4 border-[#FF6B00] pb-6 mb-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h1 className="text-4xl font-bold text-[#212121] mb-2">FACTURA</h1>
-                  <p className="text-gray-600 text-lg">{invoice.invoice_number}</p>
-                  {invoice.ncf && (
-                    <p className="text-sm text-gray-500 mt-1">NCF: {invoice.ncf}</p>
-                  )}
-                  <p className="text-sm text-gray-500">
-                    Tipo: {invoice.ncf_type === '01' ? 'Crédito Fiscal' : 'Consumidor Final'}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <div className="bg-[#FF6B00] text-white px-4 py-2 rounded-lg inline-block mb-4">
-                    <span className="text-sm font-medium">VENDIX</span>
-                  </div>
-                  <p className="text-sm text-gray-600">Sistema de Facturación</p>
-                  <p className="text-sm text-gray-600">República Dominicana</p>
-                </div>
+          {/* Contenido de la factura - Formato POS (80mm) */}
+          <div id="invoice-print-content" className="max-w-[80mm] mx-auto bg-white">
+            {/* Header del recibo POS */}
+            <div className="text-center border-b-2 border-dashed border-gray-300 pb-3 mb-3">
+              <div className="text-xl font-bold text-[#212121] mb-1">VENDIX</div>
+              <div className="text-xs text-gray-600">Sistema de Facturación</div>
+              <div className="text-xs text-gray-600">República Dominicana</div>
+            </div>
+
+            {/* Información básica */}
+            <div className="text-center border-b-2 border-dashed border-gray-300 pb-3 mb-3">
+              <div className="text-sm font-bold uppercase mb-1">Recibo de Venta</div>
+              <div className="text-xs">#{invoice.invoice_number}</div>
+              {invoice.ncf && (
+                <div className="text-xs">NCF: {invoice.ncf}</div>
+              )}
+              <div className="text-xs mt-1">
+                {invoice.ncf_type === '01' ? 'Crédito Fiscal' : 'Consumidor Final'}
               </div>
             </div>
 
-            {/* Información del cliente y fechas */}
-            <div className="grid grid-cols-2 gap-8 mb-8">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">
-                  Información del Cliente
-                </h3>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="font-bold text-lg text-[#212121] mb-1">
-                    {invoice.customer_name || 'Cliente Genérico'}
-                  </p>
-                  {invoice.customer_id && (
-                    <p className="text-sm text-gray-600">
-                      ID: {invoice.customer_id}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">
-                  Información de la Factura
-                </h3>
-                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">Fecha de Emisión:</span>
-                    <span className="text-sm font-semibold text-[#212121]">
-                      {formatDate(invoice.issue_date)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">Fecha de Vencimiento:</span>
-                    <span className="text-sm font-semibold text-[#212121]">
-                      {formatDate(invoice.due_date)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">Estado:</span>
-                    <span className={`text-sm font-semibold ${
-                      invoice.status === 'draft' ? 'text-yellow-600' :
-                      invoice.status === 'sent' ? 'text-blue-600' :
-                      invoice.status === 'paid' ? 'text-green-600' :
-                      'text-gray-600'
-                    }`}>
-                      {invoice.status === 'draft' ? 'Borrador' :
-                       invoice.status === 'sent' ? 'Enviada' :
-                       invoice.status === 'paid' ? 'Pagada' :
-                       invoice.status}
-                    </span>
-                  </div>
-                </div>
-              </div>
+            {/* Cliente compacto */}
+            <div className="border-b-2 border-dashed border-gray-300 pb-2 mb-2">
+              <div className="text-xs font-bold uppercase">Cliente:</div>
+              <div className="text-xs">{invoice.customer_name || 'Cliente Genérico'}</div>
             </div>
 
-            {/* Tabla de productos/servicios */}
-            <div className="mb-8">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-[#212121] text-white">
-                    <th className="text-left py-3 px-4 text-sm font-semibold">#</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold">Descripción</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">Cantidad</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">Precio Unit.</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">ITBIS</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoice.lines && invoice.lines.map((line, index) => (
-                    <tr key={line.id} className="border-b border-gray-200">
-                      <td className="py-3 px-4 text-sm text-gray-600">
-                        {line.line_number}
-                      </td>
-                      <td className="py-3 px-4">
-                        <p className="font-medium text-[#212121]">{line.description}</p>
-                      </td>
-                      <td className="py-3 px-4 text-right text-sm text-gray-600">
-                        {line.quantity}
-                      </td>
-                      <td className="py-3 px-4 text-right text-sm text-gray-600">
-                        {formatCurrency(line.unit_price)}
-                      </td>
-                      <td className="py-3 px-4 text-right text-sm text-gray-600">
-                        {formatCurrency(line.tax_amount)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold text-[#212121]">
-                        {formatCurrency(line.line_total)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Fecha compacta */}
+            <div className="border-b-2 border-dashed border-gray-300 pb-2 mb-2 text-xs">
+              <div>Fecha: {formatDate(invoice.issue_date)}</div>
+              {invoice.due_date !== invoice.issue_date && (
+                <div>Vence: {formatDate(invoice.due_date)}</div>
+              )}
             </div>
 
-            {/* Totales */}
-            <div className="flex justify-end mb-8">
-              <div className="w-80">
-                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Subtotal:</span>
-                    <span className="font-semibold text-[#212121]">
-                      {formatCurrency(invoice.subtotal)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">ITBIS (18%):</span>
-                    <span className="font-semibold text-[#212121]">
-                      {formatCurrency(invoice.tax_amount)}
-                    </span>
-                  </div>
-                  <div className="border-t-2 border-gray-300 pt-3 flex justify-between">
-                    <span className="font-bold text-lg text-[#212121]">TOTAL:</span>
-                    <span className="font-bold text-2xl text-[#FF6B00]">
-                      {formatCurrency(invoice.total)}
-                    </span>
-                  </div>
-                  {invoice.paid_amount > 0 && (
-                    <>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Pagado:</span>
-                        <span className="font-semibold text-green-600">
-                          {formatCurrency(invoice.paid_amount)}
-                        </span>
+            {/* Items - Formato compacto para POS */}
+            <div className="border-b-2 border-dashed border-gray-300 pb-2 mb-2">
+              {invoice.lines && invoice.lines.map((line) => (
+                <div key={line.id} className="mb-2 pb-2 border-b border-gray-200 last:border-0">
+                  <div className="flex justify-between items-start text-xs mb-1">
+                    <div className="flex-1">
+                      <div className="font-semibold">{line.description}</div>
+                      <div className="text-gray-600">
+                        {line.quantity} x {formatCurrency(line.unit_price)}
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Balance Pendiente:</span>
-                        <span className="font-semibold text-red-600">
-                          {formatCurrency(invoice.total - invoice.paid_amount)}
-                        </span>
-                      </div>
-                    </>
-                  )}
+                    </div>
+                    <div className="text-right font-bold">
+                      {formatCurrency(line.line_total)}
+                    </div>
+                  </div>
                 </div>
+              ))}
+            </div>
+
+            {/* Totales compactos */}
+            <div className="border-b-2 border-dashed border-gray-300 pb-2 mb-2 space-y-1">
+              <div className="flex justify-between text-xs">
+                <span>Subtotal:</span>
+                <span>{formatCurrency(invoice.subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span>ITBIS:</span>
+                <span>{formatCurrency(invoice.tax_amount)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-sm border-t border-gray-300 pt-1">
+                <span>TOTAL:</span>
+                <span>{formatCurrency(invoice.total)}</span>
               </div>
             </div>
 
-            {/* Notas y términos */}
-            {(invoice.notes || invoice.terms) && (
-              <div className="border-t border-gray-200 pt-6 space-y-4">
-                {invoice.notes && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">
-                      Notas
-                    </h3>
-                    <p className="text-sm text-gray-600">{invoice.notes}</p>
-                  </div>
-                )}
-                {invoice.terms && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">
-                      Términos y Condiciones
-                    </h3>
-                    <p className="text-sm text-gray-600">{invoice.terms}</p>
-                  </div>
-                )}
+            {/* Notas compactas si existen */}
+            {invoice.notes && (
+              <div className="border-b-2 border-dashed border-gray-300 pb-2 mb-2 text-xs text-gray-600">
+                <div className="font-bold mb-1">NOTA:</div>
+                <div>{invoice.notes}</div>
               </div>
             )}
 
-            {/* Footer */}
-            <div className="border-t border-gray-200 pt-6 mt-8">
-              <p className="text-center text-xs text-gray-500">
-                Este documento fue generado electrónicamente por VENDIX
-              </p>
-              <p className="text-center text-xs text-gray-500 mt-1">
-                Factura generada el {new Date().toLocaleString('es-DO')}
-              </p>
+            {/* Footer compacto */}
+            <div className="text-center border-t-2 border-dashed border-gray-300 pt-3 mt-3">
+              <div className="text-xs text-gray-500">
+                ¡Gracias por su compra!
+              </div>
+              <div className="text-[10px] text-gray-400 mt-1">
+                {new Date().toLocaleString('es-DO')}
+              </div>
+              <div className="text-[10px] text-gray-400 mt-2">
+                Documento generado electrónicamente
+              </div>
             </div>
           </div>
 

@@ -12,6 +12,7 @@ import (
 	"vendix/internal/modules/products"
 	"vendix/internal/modules/reports"
 	"vendix/internal/modules/sales"
+	"vendix/internal/modules/suppliers"
 	"vendix/internal/modules/tenantconfig"
 	"vendix/internal/modules/tenants"
 	"vendix/internal/modules/webhooks"
@@ -111,6 +112,9 @@ func (s *Server) setupRoutes() {
 
 	// Product management
 	products.RegisterRoutes(protected, s.DB, s.Config)
+
+	// Suppliers management
+	suppliers.RegisterRoutes(protected, s.DB, s.Config)
 
 	// Invoice management
 	invoices.RegisterRoutes(protected, s.DB, s.Config)
