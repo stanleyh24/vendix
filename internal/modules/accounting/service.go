@@ -8,19 +8,22 @@ import (
 	"vendix/internal/config"
 	"vendix/internal/database"
 	"vendix/internal/logger"
+	"vendix/internal/modules/sales"
 
 	"github.com/google/uuid"
 )
 
 type Service struct {
-	repo *Repository
-	cfg  *config.Config
+	repo         *Repository
+	salesRepo    *sales.Repository
+	cfg          *config.Config
 }
 
 func NewService(db *database.DB, cfg *config.Config) *Service {
 	return &Service{
-		repo: NewRepository(db),
-		cfg:  cfg,
+		repo:      NewRepository(db),
+		salesRepo: sales.NewRepository(db),
+		cfg:       cfg,
 	}
 }
 
@@ -385,4 +388,199 @@ func (s *Service) GetIncomeStatement(ctx context.Context, schema string, startDa
 	report.Total = revenueTotal - expenseTotal
 
 	return report, nil
+}
+
+// GenerateDailySalesJournalEntry generates a journal entry for all sales of a specific day
+// It groups sales by payment method (cash, card, credit) and creates a single journal entry
+func (s *Service) GenerateDailySalesJournalEntry(ctx context.Context, schema string, date string, userID *uuid.UUID) (*JournalEntry, error) {
+	// Get daily sales summary
+	summary, err := s.salesRepo.GetDailySalesSummary(ctx, schema, date)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get daily sales summary: %w", err)
+	}
+
+	// Check if there are any sales
+	if summary.TotalTransactions == 0 {
+		return nil, fmt.Errorf("no sales found for date %s", date)
+	}
+
+	// Check if journal entry already exists for this date
+	existingEntries, err := s.repo.ListJournalEntries(ctx, schema, &date, &date, stringPtr("posted"))
+	if err == nil {
+		for _, entry := range existingEntries {
+			if entry.Description == fmt.Sprintf("Asiento diario de ventas - %s", date) {
+				return nil, fmt.Errorf("journal entry already exists for date %s", date)
+			}
+		}
+	}
+
+	// Generate entry number
+	entryNumber, err := s.repo.GetNextEntryNumber(ctx, schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate entry number: %w", err)
+	}
+
+	// Parse entry date
+	entryDate, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date format: %w", err)
+	}
+
+	// Create journal entry
+	entry := &JournalEntry{
+		ID:          uuid.New(),
+		EntryNumber: entryNumber,
+		EntryDate:   entryDate,
+		Description: fmt.Sprintf("Asiento diario de ventas - %s", date),
+		Reference:   stringPtr(fmt.Sprintf("VENTAS-%s", date)),
+		Status:      "posted",
+		CreatedBy:   userID,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Lines:       []JournalEntryLine{},
+	}
+
+	// Build journal entry lines
+	// DEBE (Debit):
+	// - Caja General (1111) - ventas en efectivo
+	// - Banco - Cuenta Corriente (1112) - ventas con tarjeta y transferencias
+	// - Clientes (1121) - ventas a crédito (CXC)
+
+	// HABER (Credit):
+	// - Ventas (4110) - subtotal de todas las ventas
+	// - ITBIS por Pagar (2121) - total de impuestos
+	// - Descuentos en Ventas (4111) - si hay descuentos (por ahora 0)
+
+	// Verify accounts exist
+	accountsToCheck := []string{"1111", "1112", "1121", "4110", "2121"}
+	for _, code := range accountsToCheck {
+		_, err := s.repo.GetAccountByCode(ctx, schema, code)
+		if err != nil {
+			return nil, fmt.Errorf("account %s not found in chart of accounts", code)
+		}
+	}
+
+	// Get account names
+	cashAccount, _ := s.repo.GetAccountByCode(ctx, schema, "1111")
+	bankAccount, _ := s.repo.GetAccountByCode(ctx, schema, "1112")
+	arAccount, _ := s.repo.GetAccountByCode(ctx, schema, "1121")
+	salesAccount, _ := s.repo.GetAccountByCode(ctx, schema, "4110")
+	taxAccount, _ := s.repo.GetAccountByCode(ctx, schema, "2121")
+
+	// DEBIT LINES (DEBE)
+	// 1. Caja General - ventas en efectivo (subtotal + tax)
+	if summary.CashTotal > 0 {
+		entry.Lines = append(entry.Lines, JournalEntryLine{
+			ID:             uuid.New(),
+			JournalEntryID: entry.ID,
+			AccountCode:    "1111",
+			AccountName:    cashAccount.AccountName,
+			Debit:          summary.CashTotal,
+			Credit:         0,
+			Description:    stringPtr(fmt.Sprintf("Ventas en efectivo - %d transacciones", summary.TotalTransactions)),
+			CreatedAt:      time.Now(),
+		})
+	}
+
+	// 2. Banco - Cuenta Corriente - ventas con tarjeta y transferencias
+	cardAndTransferTotal := summary.CardTotal + summary.TransferTotal
+	if cardAndTransferTotal > 0 {
+		entry.Lines = append(entry.Lines, JournalEntryLine{
+			ID:             uuid.New(),
+			JournalEntryID: entry.ID,
+			AccountCode:    "1112",
+			AccountName:    bankAccount.AccountName,
+			Debit:          cardAndTransferTotal,
+			Credit:         0,
+			Description:    stringPtr(fmt.Sprintf("Ventas con tarjeta y transferencias")),
+			CreatedAt:      time.Now(),
+		})
+	}
+
+	// 3. Clientes (CXC) - ventas a crédito
+	if summary.CreditTotal > 0 {
+		entry.Lines = append(entry.Lines, JournalEntryLine{
+			ID:             uuid.New(),
+			JournalEntryID: entry.ID,
+			AccountCode:    "1121",
+			AccountName:    arAccount.AccountName,
+			Debit:          summary.CreditTotal,
+			Credit:         0,
+			Description:    stringPtr(fmt.Sprintf("Ventas a crédito (CXC)")),
+			CreatedAt:      time.Now(),
+		})
+	}
+
+	// CREDIT LINES (HABER)
+	// 4. Ventas - subtotal de todas las ventas
+	if summary.TotalSubtotal > 0 {
+		entry.Lines = append(entry.Lines, JournalEntryLine{
+			ID:             uuid.New(),
+			JournalEntryID: entry.ID,
+			AccountCode:    "4110",
+			AccountName:    salesAccount.AccountName,
+			Debit:          0,
+			Credit:         summary.TotalSubtotal,
+			Description:    stringPtr(fmt.Sprintf("Ventas del día - %d transacciones", summary.TotalTransactions)),
+			CreatedAt:      time.Now(),
+		})
+	}
+
+	// 5. ITBIS por Pagar - total de impuestos
+	if summary.TotalTax > 0 {
+		entry.Lines = append(entry.Lines, JournalEntryLine{
+			ID:             uuid.New(),
+			JournalEntryID: entry.ID,
+			AccountCode:    "2121",
+			AccountName:    taxAccount.AccountName,
+			Debit:          0,
+			Credit:         summary.TotalTax,
+			Description:    stringPtr("ITBIS por Pagar"),
+			CreatedAt:      time.Now(),
+		})
+	}
+
+	// 6. Impuesto Selectivo (si aplica) - por ahora 0, pero estructura lista
+	if summary.TotalSelective > 0 {
+		// Verificar si existe la cuenta 2123 para Impuesto Selectivo
+		selectiveAccount, err := s.repo.GetAccountByCode(ctx, schema, "2123")
+		if err == nil {
+			entry.Lines = append(entry.Lines, JournalEntryLine{
+				ID:             uuid.New(),
+				JournalEntryID: entry.ID,
+				AccountCode:    "2123",
+				AccountName:    selectiveAccount.AccountName,
+				Debit:          0,
+				Credit:         summary.TotalSelective,
+				Description:    stringPtr("Impuesto Selectivo por Pagar"),
+				CreatedAt:      time.Now(),
+			})
+		}
+	}
+
+	// Validate that debits equal credits
+	totalDebit := 0.0
+	totalCredit := 0.0
+	for _, line := range entry.Lines {
+		totalDebit += line.Debit
+		totalCredit += line.Credit
+	}
+
+	if totalDebit != totalCredit {
+		return nil, fmt.Errorf("debits (%.2f) must equal credits (%.2f)", totalDebit, totalCredit)
+	}
+
+	// Save journal entry
+	if err := s.repo.CreateJournalEntry(ctx, schema, entry); err != nil {
+		logger.Error("Failed to create daily sales journal entry", "error", err)
+		return nil, fmt.Errorf("failed to create journal entry: %w", err)
+	}
+
+	logger.Info("Daily sales journal entry created", "entry_number", entry.EntryNumber, "date", date)
+	return entry, nil
+}
+
+// Helper function to create string pointer
+func stringPtr(s string) *string {
+	return &s
 }

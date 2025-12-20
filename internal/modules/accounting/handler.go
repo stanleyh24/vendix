@@ -8,6 +8,7 @@ import (
 	"vendix/internal/middleware"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 )
 
 type Handler struct {
@@ -32,6 +33,8 @@ func RegisterRoutes(router fiber.Router, db *database.DB, cfg *config.Config) {
 	// Journal Entries
 	accounting.Get("/journal-entries", h.ListJournalEntries)
 	accounting.Post("/journal-entries", h.CreateJournalEntry)
+	// Daily Sales Journal Entry - must be registered before parameterized routes
+	accounting.Post("/journal-entries/daily-sales", h.GenerateDailySalesJournalEntry)
 	accounting.Get("/journal-entries/:id", h.GetJournalEntry)
 
 	// Reports
@@ -360,4 +363,46 @@ func (h *Handler) GetIncomeStatement(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(report)
+}
+
+// GenerateDailySalesJournalEntry generates a journal entry for all sales of a specific day
+// @Summary Generate daily sales journal entry
+// @Tags accounting
+// @Accept json
+// @Produce json
+// @Param request body GenerateDailySalesJournalEntryRequest true "Date for journal entry"
+// @Success 201 {object} JournalEntry
+// @Router /api/v1/tenant/accounting/journal-entries/daily-sales [post]
+func (h *Handler) GenerateDailySalesJournalEntry(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	if schema == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Tenant schema not found in context",
+		})
+	}
+
+	var req GenerateDailySalesJournalEntryRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request body",
+		})
+	}
+
+	// Get user ID from context (set by auth middleware)
+	var userIDPtr *uuid.UUID
+	if userIDStr, ok := c.Locals("user_id").(string); ok && userIDStr != "" {
+		userID, err := uuid.Parse(userIDStr)
+		if err == nil {
+			userIDPtr = &userID
+		}
+	}
+
+	entry, err := h.service.GenerateDailySalesJournalEntry(c.Context(), schema, req.Date, userIDPtr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(entry)
 }

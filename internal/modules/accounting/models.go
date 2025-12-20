@@ -133,3 +133,8 @@ type FinancialStatementItem struct {
 	AccountName string  `json:"account_name"`
 	Amount      float64 `json:"amount"`
 }
+
+// GenerateDailySalesJournalEntryRequest represents the request to generate a daily sales journal entry
+type GenerateDailySalesJournalEntryRequest struct {
+	Date string `json:"date" validate:"required"` // Format: YYYY-MM-DD
+}

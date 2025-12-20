@@ -22,9 +22,9 @@ func RegisterRoutes(router fiber.Router, db *database.DB, cfg *config.Config) {
 	sup := router.Group("/suppliers")
 	sup.Get("/", h.List)
 	sup.Post("/", h.Create)
-	sup.Get(":id", h.Get)
-	sup.Put(":id", h.Update)
-	sup.Delete(":id", h.Delete)
+	sup.Get("/:id", h.Get)
+	sup.Put("/:id", h.Update)
+	sup.Delete("/:id", h.Delete)
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {

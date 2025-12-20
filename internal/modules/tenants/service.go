@@ -170,7 +170,78 @@ func (s *Service) InitializeSchema(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to run tenant migrations: %w", err)
 	}
 
+	// Create default cash register after migrations
+	if err := s.createDefaultCashRegister(ctx, tenant.SchemaName); err != nil {
+		logger.Error("Failed to create default cash register", "error", err, "schema", tenant.SchemaName)
+		// Don't fail initialization if default cash register creation fails
+		// This allows tenants to continue functioning even if cash registers feature has issues
+	}
+
 	logger.Info("Tenant schema initialized successfully", "schema", tenant.SchemaName)
 
+	return nil
+}
+
+// createDefaultCashRegister creates a default cash register for the tenant
+func (s *Service) createDefaultCashRegister(ctx context.Context, schema string) error {
+	// Check if cash_registers table exists (migration 26)
+	checkQuery := fmt.Sprintf(`
+		SELECT EXISTS (
+			SELECT FROM information_schema.tables 
+			WHERE table_schema = '%s' 
+			AND table_name = 'cash_registers'
+		)
+	`, schema)
+
+	var tableExists bool
+	err := s.db.Pool.QueryRow(ctx, checkQuery).Scan(&tableExists)
+	if err != nil {
+		return fmt.Errorf("failed to check if cash_registers table exists: %w", err)
+	}
+
+	if !tableExists {
+		logger.Debug("cash_registers table does not exist, skipping default cash register creation", "schema", schema)
+		return nil
+	}
+
+	// Check if a cash register already exists
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s.cash_registers`, schema)
+	var count int
+	err = s.db.Pool.QueryRow(ctx, countQuery).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check existing cash registers: %w", err)
+	}
+
+	if count > 0 {
+		logger.Debug("Cash registers already exist, skipping default cash register creation", "schema", schema, "count", count)
+		return nil
+	}
+
+	// Create default cash register
+	registerID := uuid.New()
+	registerName := "Caja Principal"
+	now := time.Now()
+
+	insertQuery := fmt.Sprintf(`
+		INSERT INTO %s.cash_registers (id, name, location, is_active, initial_balance, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, schema)
+
+	_, err = s.db.Pool.Exec(ctx, insertQuery,
+		registerID,
+		registerName,
+		nil, // location
+		true, // is_active
+		0.00, // initial_balance
+		nil,  // created_by (system creation, no user)
+		now,
+		now,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to create default cash register: %w", err)
+	}
+
+	logger.Info("Default cash register created", "schema", schema, "register_id", registerID, "name", registerName)
 	return nil
 }

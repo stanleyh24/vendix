@@ -74,6 +74,36 @@ bash scripts/verify-setup.sh
 
 ---
 
+### `add-default-cash-register.sh`
+
+Agrega un cash register por defecto ("Caja Principal") a todos los tenants existentes que no tengan uno.
+
+**Uso:**
+```bash
+bash scripts/add-default-cash-register.sh
+# O usando Make:
+make add-default-cash-registers
+```
+
+**Qué hace:**
+- ✅ Obtiene todos los tenants activos de la base de datos
+- ✅ Verifica si existe la tabla `cash_registers` en cada tenant
+- ✅ Verifica si ya tienen cash registers creados
+- ✅ Crea "Caja Principal" para tenants que no tengan uno
+- ✅ Muestra resumen de operaciones
+
+**Cuándo usar:**
+- Después de agregar la funcionalidad de cash registers
+- Para actualizar tenants existentes que fueron creados antes de esta feature
+- Después de migraciones que incluyan la tabla cash_registers
+
+**Variables de entorno:**
+```bash
+DB_HOST=localhost DB_PORT=5432 DB_USER=postgres DB_PASSWORD=postgres DB_NAME=vendix bash scripts/add-default-cash-register.sh
+```
+
+---
+
 ## 📝 Convenciones
 
 ### Estructura de Scripts

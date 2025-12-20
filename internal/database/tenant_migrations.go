@@ -688,5 +688,162 @@ func getTenantMigrations() []Migration {
 				CREATE INDEX IF NOT EXISTS idx_products_supplier_id ON products(supplier_id);
 			`,
 		},
+		{
+			Version: 24,
+			Name:    "create_employees_table",
+			SQL: `
+				CREATE TABLE IF NOT EXISTS employees (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					employee_code VARCHAR(100) UNIQUE NOT NULL,
+					first_name VARCHAR(100) NOT NULL,
+					last_name VARCHAR(100) NOT NULL,
+					email VARCHAR(255),
+					phone VARCHAR(50),
+					tax_id VARCHAR(50),
+					address TEXT,
+					city VARCHAR(100),
+					state VARCHAR(100),
+					postal_code VARCHAR(20),
+					country VARCHAR(2) DEFAULT 'DO',
+					department VARCHAR(100),
+					position VARCHAR(100),
+					hire_date DATE,
+					salary DECIMAL(10, 2),
+					salary_type VARCHAR(20) NOT NULL DEFAULT 'monthly',
+					is_active BOOLEAN DEFAULT true,
+					metadata JSONB DEFAULT '{}',
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX IF NOT EXISTS idx_employees_code ON employees(employee_code);
+				CREATE INDEX IF NOT EXISTS idx_employees_email ON employees(email);
+				CREATE INDEX IF NOT EXISTS idx_employees_tax_id ON employees(tax_id);
+				CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department);
+				CREATE INDEX IF NOT EXISTS idx_employees_is_active ON employees(is_active);
+			`,
+		},
+		{
+			Version: 25,
+			Name:    "create_payroll_tables",
+			SQL: `
+				-- Tabla de períodos de nómina
+				CREATE TABLE IF NOT EXISTS payroll_periods (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					period_code VARCHAR(20) UNIQUE NOT NULL,
+					period_start DATE NOT NULL,
+					period_end DATE NOT NULL,
+					status VARCHAR(50) NOT NULL DEFAULT 'draft',
+					total_gross DECIMAL(12, 2) DEFAULT 0,
+					total_deductions DECIMAL(12, 2) DEFAULT 0,
+					total_net DECIMAL(12, 2) DEFAULT 0,
+					notes TEXT,
+					created_by UUID REFERENCES users(id),
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX IF NOT EXISTS idx_payroll_periods_code ON payroll_periods(period_code);
+				CREATE INDEX IF NOT EXISTS idx_payroll_periods_status ON payroll_periods(status);
+				CREATE INDEX IF NOT EXISTS idx_payroll_periods_dates ON payroll_periods(period_start, period_end);
+
+				-- Tabla de entradas de nómina (detalles por empleado)
+				CREATE TABLE IF NOT EXISTS payroll_entries (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					payroll_period_id UUID NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
+					employee_id UUID NOT NULL REFERENCES employees(id),
+					employee_code VARCHAR(100) NOT NULL,
+					employee_name VARCHAR(255) NOT NULL,
+					department VARCHAR(100),
+					position VARCHAR(100),
+					salary DECIMAL(10, 2) NOT NULL,
+					salary_type VARCHAR(20) NOT NULL,
+					hours_worked DECIMAL(8, 2),
+					days_worked DECIMAL(8, 2),
+					gross_salary DECIMAL(12, 2) NOT NULL DEFAULT 0,
+					overtime_hours DECIMAL(8, 2) DEFAULT 0,
+					overtime_pay DECIMAL(12, 2) DEFAULT 0,
+					bonuses DECIMAL(12, 2) DEFAULT 0,
+					commissions DECIMAL(12, 2) DEFAULT 0,
+					total_gross DECIMAL(12, 2) NOT NULL DEFAULT 0,
+					tax_deduction DECIMAL(12, 2) DEFAULT 0,
+					social_security DECIMAL(12, 2) DEFAULT 0,
+					other_deductions DECIMAL(12, 2) DEFAULT 0,
+					total_deductions DECIMAL(12, 2) DEFAULT 0,
+					net_salary DECIMAL(12, 2) NOT NULL DEFAULT 0,
+					notes TEXT,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX IF NOT EXISTS idx_payroll_entries_period ON payroll_entries(payroll_period_id);
+				CREATE INDEX IF NOT EXISTS idx_payroll_entries_employee ON payroll_entries(employee_id);
+				CREATE INDEX IF NOT EXISTS idx_payroll_entries_employee_code ON payroll_entries(employee_code);
+			`,
+		},
+		{
+			Version: 26,
+			Name:    "create_cash_registers_table",
+			SQL: `
+				CREATE TABLE IF NOT EXISTS cash_registers (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					name VARCHAR(255) NOT NULL,
+					location VARCHAR(255),
+					is_active BOOLEAN NOT NULL DEFAULT true,
+					initial_balance DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					created_by UUID REFERENCES users(id),
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_cash_registers_is_active ON cash_registers(is_active);
+			`,
+		},
+		{
+			Version: 27,
+			Name:    "create_cash_register_sessions_table",
+			SQL: `
+				CREATE TABLE IF NOT EXISTS cash_register_sessions (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					cash_register_id UUID NOT NULL REFERENCES cash_registers(id),
+					opened_by UUID NOT NULL REFERENCES users(id),
+					closed_by UUID REFERENCES users(id),
+					opening_balance DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					expected_cash DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					counted_cash DECIMAL(10, 2),
+					expected_card DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					expected_transfer DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					difference DECIMAL(10, 2),
+					status VARCHAR(50) NOT NULL DEFAULT 'open',
+					notes TEXT,
+					journal_entry_id UUID REFERENCES journal_entries(id),
+					opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					closed_at TIMESTAMP,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_cash_register_sessions_cash_register_id ON cash_register_sessions(cash_register_id);
+				CREATE INDEX idx_cash_register_sessions_status ON cash_register_sessions(status);
+				CREATE INDEX idx_cash_register_sessions_opened_at ON cash_register_sessions(opened_at);
+				CREATE INDEX idx_cash_register_sessions_journal_entry_id ON cash_register_sessions(journal_entry_id);
+			`,
+		},
+		{
+			Version: 28,
+			Name:    "create_cash_count_details_table",
+			SQL: `
+				CREATE TABLE IF NOT EXISTS cash_count_details (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					session_id UUID NOT NULL REFERENCES cash_register_sessions(id) ON DELETE CASCADE,
+					denomination DECIMAL(10, 2) NOT NULL,
+					quantity INTEGER NOT NULL DEFAULT 0,
+					subtotal DECIMAL(10, 2) NOT NULL,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_cash_count_details_session_id ON cash_count_details(session_id);
+			`,
+		},
 	}
 }

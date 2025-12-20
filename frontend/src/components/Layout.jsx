@@ -10,7 +10,9 @@ import {
   FileText, 
   BookOpen,
   Settings,
-  User
+  User,
+  UserPlus,
+  DollarSign
 } from 'lucide-react'
 
 export default function Layout() {
@@ -32,6 +34,8 @@ export default function Layout() {
     { name: 'Gastos', href: '/expenses', icon: Receipt },
     { name: 'Facturación', href: '/invoices', icon: FileText },
     { name: 'Contabilidad', href: '/accounting', icon: BookOpen },
+    { name: 'Empleados', href: '/employees', icon: UserPlus },
+    { name: 'Nómina', href: '/payroll', icon: DollarSign },
     { name: 'Configuración', href: '/settings', icon: Settings },
   ]
 

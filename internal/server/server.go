@@ -6,9 +6,12 @@ import (
 	"vendix/internal/middleware"
 	"vendix/internal/modules/accounting"
 	"vendix/internal/modules/auth"
+	"vendix/internal/modules/cashregisters"
 	"vendix/internal/modules/customers"
+	"vendix/internal/modules/employees"
 	"vendix/internal/modules/invoices"
 	"vendix/internal/modules/payments"
+	"vendix/internal/modules/payroll"
 	"vendix/internal/modules/products"
 	"vendix/internal/modules/reports"
 	"vendix/internal/modules/sales"
@@ -130,6 +133,15 @@ func (s *Server) setupRoutes() {
 
 	// Accounting
 	accounting.RegisterRoutes(protected, s.DB, s.Config)
+
+	// Cash Registers
+	cashregisters.RegisterRoutes(protected, s.DB, s.Config)
+
+	// Employee management
+	employees.RegisterRoutes(protected, s.DB, s.Config)
+
+	// Payroll management
+	payroll.RegisterRoutes(protected, s.DB, s.Config)
 }
 
 func customErrorHandler(c *fiber.Ctx, err error) error {

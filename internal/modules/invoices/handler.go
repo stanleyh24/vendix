@@ -25,11 +25,12 @@ func RegisterRoutes(router fiber.Router, db *database.DB, cfg *config.Config) {
 	invoices := router.Group("/invoices")
 	invoices.Post("/", h.Create)
 	invoices.Get("/", h.List)
-	invoices.Get("/:id", h.Get)
-	invoices.Put("/:id", h.Update)
+	// Specific routes must be registered before parameterized routes
+	invoices.Get("/:id/pdf", h.DownloadPDF)
 	invoices.Post("/:id/send", h.SendInvoice)
 	invoices.Post("/:id/cancel", h.CancelInvoice)
-	invoices.Get("/:id/pdf", h.DownloadPDF)
+	invoices.Get("/:id", h.Get)
+	invoices.Put("/:id", h.Update)
 }
 
 // Create creates a new invoice

@@ -102,6 +102,10 @@ check-accounts: ## Check accounting tables status in all tenants
 	@echo "Checking accounting tables..."
 	@./scripts/check-accounting-tables.sh
 
+add-default-cash-registers: ## Add default cash register to all existing tenants
+	@echo "Adding default cash registers..."
+	@./scripts/add-default-cash-register.sh
+
 recreate-demo: ## Recreate demo tenant from scratch
 	@echo "Recreating demo tenant..."
 	@./scripts/recreate-demo-tenant.sh

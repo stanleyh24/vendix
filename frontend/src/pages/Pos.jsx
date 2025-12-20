@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Trash2, Search, User, X, Calculator, DollarSign, Printer, FileText } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, Search, User, X, Calculator, DollarSign, Printer, FileText, Store, Calendar, Play, CreditCard, Wallet, AlertCircle } from 'lucide-react';
 import api from '../lib/api';
 import Alert from '../components/Alert';
 import InvoicePrint from '../components/InvoicePrint';
@@ -15,6 +15,16 @@ const GENERIC_CUSTOMER = {
 };
 
 export default function Pos() {
+  // Cash register and session state
+  const [cashRegisters, setCashRegisters] = useState([]);
+  const [selectedRegister, setSelectedRegister] = useState(null);
+  const [sessionDate, setSessionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [openingBalance, setOpeningBalance] = useState('0.00');
+  const [activeSession, setActiveSession] = useState(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [showRegisterSelection, setShowRegisterSelection] = useState(true);
+
+  // POS state
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -31,11 +41,223 @@ export default function Pos() {
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Cargar datos iniciales
+  // Load cash registers on mount
   useEffect(() => {
-    loadCustomers();
-    loadProducts();
+    loadCashRegisters();
+    // Check for active session in localStorage
+    const storedSession = localStorage.getItem('active_cash_session');
+    if (storedSession) {
+      try {
+        const session = JSON.parse(storedSession);
+        // Verify session is still valid
+        checkActiveSession(session.cash_register_id).then((isValid) => {
+          if (isValid) {
+            setActiveSession(session);
+            setSelectedRegister(session.cash_register_id);
+            setShowRegisterSelection(false);
+            loadCustomers();
+            loadProducts();
+          } else {
+            localStorage.removeItem('active_cash_session');
+          }
+        }).catch(() => {
+          localStorage.removeItem('active_cash_session');
+        });
+      } catch (e) {
+        localStorage.removeItem('active_cash_session');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load cash registers
+  const loadCashRegisters = async () => {
+    try {
+      const response = await api.get('/cash-registers?active_only=true');
+      setCashRegisters(response.data || []);
+    } catch (error) {
+      console.error('Error loading cash registers:', error);
+      showAlert('error', 'Error', 'No se pudieron cargar las cajas registradoras');
+    }
+  };
+
+  // Check if there's an active session for a register
+  const checkActiveSession = async (registerId) => {
+    try {
+      const response = await api.get(`/cash-registers/${registerId}/open-session`);
+      if (response.data && response.data.status === 'open') {
+        setActiveSession(response.data);
+        localStorage.setItem('active_cash_session', JSON.stringify(response.data));
+        return true;
+      }
+    } catch (error) {
+      // No active session found (404 or other error)
+      return false;
+    }
+    return false;
+  };
+
+  // Open a new session
+  const openSession = async () => {
+    if (!selectedRegister) {
+      showAlert('warning', 'Selecciona una caja', 'Debes seleccionar una caja registradora para comenzar');
+      return;
+    }
+
+    // Check if register already has an open session
+    try {
+      const existingSession = await api.get(`/cash-registers/${selectedRegister}/open-session`);
+      if (existingSession.data && existingSession.data.status === 'open') {
+        showAlert('info', 'Sesión activa', 'Usando la sesión existente de esta caja');
+        setActiveSession(existingSession.data);
+        localStorage.setItem('active_cash_session', JSON.stringify(existingSession.data));
+        setShowRegisterSelection(false);
+        loadCustomers();
+        loadProducts();
+        return;
+      }
+    } catch (error) {
+      // No existing session, continue
+    }
+
+    setSessionLoading(true);
+    try {
+      const balance = parseFloat(openingBalance) || 0;
+      const response = await api.post('/cash-registers/sessions/open', {
+        cash_register_id: selectedRegister,
+        opening_balance: balance,
+        notes: `Sesión iniciada el ${sessionDate}`,
+      });
+
+      setActiveSession(response.data);
+      localStorage.setItem('active_cash_session', JSON.stringify(response.data));
+      setShowRegisterSelection(false);
+      loadCustomers();
+      loadProducts();
+      showAlert('success', 'Sesión iniciada', 'Puedes comenzar a realizar ventas');
+    } catch (error) {
+      showAlert('error', 'Error', error.response?.data?.error || 'No se pudo iniciar la sesión');
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+
+  // Close session modal state
+  const [showCloseSessionModal, setShowCloseSessionModal] = useState(false);
+  const [sessionSummary, setSessionSummary] = useState(null);
+  const [countedCash, setCountedCash] = useState('');
+  const [closingNotes, setClosingNotes] = useState('');
+  const [closingSession, setClosingSession] = useState(false);
+
+  // Load session summary before closing
+  const loadSessionSummary = async (sessionId) => {
+    try {
+      const response = await api.get(`/cash-registers/sessions/${sessionId}/summary`);
+      console.log('Session summary loaded:', response.data);
+      setSessionSummary(response.data);
+      // Pre-fill counted cash with expected amount
+      const expectedTotal = response.data.session?.expected_cash || response.data.Session?.expected_cash || 0;
+      setCountedCash(expectedTotal.toFixed(2));
+    } catch (error) {
+      console.error('Error loading session summary:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'No se pudo cargar el resumen de la sesión';
+      showAlert('error', 'Error', errorMessage);
+      // Still show modal with empty state so user can close session manually
+      setSessionSummary({
+        session: activeSession,
+        total_sales: 0,
+        sales_by_payment_type: {
+          cash: 0,
+          card: 0,
+          transfer: 0
+        },
+        total_transactions: 0
+      });
+      setCountedCash('0.00');
+    }
+  };
+
+  // Open close session modal
+  const openCloseSessionModal = async () => {
+    if (!activeSession) return;
+    setShowCloseSessionModal(true);
+    await loadSessionSummary(activeSession.id);
+  };
+
+  // Helper function to get summary values safely
+  const getSummaryValue = () => {
+    if (!sessionSummary && !activeSession) {
+      return {
+        openingBalance: 0,
+        cashSales: 0,
+        cardSales: 0,
+        transferSales: 0,
+        totalSales: 0,
+        totalTransactions: 0,
+        expectedCash: 0
+      };
+    }
+    
+    const openingBalance = sessionSummary?.session?.opening_balance || 
+                          sessionSummary?.Session?.opening_balance || 
+                          activeSession?.opening_balance || 0;
+    const cashSales = sessionSummary?.sales_by_payment_type?.cash || 
+                     sessionSummary?.SalesByPaymentType?.cash || 0;
+    const cardSales = sessionSummary?.sales_by_payment_type?.card || 
+                     sessionSummary?.SalesByPaymentType?.card || 0;
+    const transferSales = sessionSummary?.sales_by_payment_type?.transfer || 
+                         sessionSummary?.SalesByPaymentType?.transfer || 0;
+    const totalSales = sessionSummary?.total_sales || sessionSummary?.TotalSales || 0;
+    const totalTransactions = sessionSummary?.total_transactions || sessionSummary?.TotalTransactions || 0;
+    const expectedCash = openingBalance + cashSales;
+    
+    return {
+      openingBalance,
+      cashSales,
+      cardSales,
+      transferSales,
+      totalSales,
+      totalTransactions,
+      expectedCash
+    };
+  };
+
+  // Close current session (backend)
+  const closeSession = async () => {
+    if (!activeSession) return;
+
+    const cash = parseFloat(countedCash) || 0;
+    if (cash < 0) {
+      showAlert('warning', 'Monto inválido', 'El monto contado no puede ser negativo');
+      return;
+    }
+
+    setClosingSession(true);
+    try {
+      const response = await api.post(`/cash-registers/sessions/${activeSession.id}/close`, {
+        counted_cash: cash,
+        notes: closingNotes || null,
+      });
+
+      showAlert('success', 'Sesión cerrada', 'La sesión se ha cerrado correctamente');
+      
+      // Clear session state
+      setActiveSession(null);
+      setShowRegisterSelection(true);
+      setSelectedRegister(null);
+      localStorage.removeItem('active_cash_session');
+      setCart([]);
+      setSelectedCustomer(null);
+      setShowCloseSessionModal(false);
+      setSessionSummary(null);
+      setCountedCash('');
+      setClosingNotes('');
+    } catch (error) {
+      showAlert('error', 'Error', error.response?.data?.error || 'No se pudo cerrar la sesión');
+    } finally {
+      setClosingSession(false);
+    }
+  };
 
   const loadCustomers = async () => {
     try {
@@ -195,6 +417,118 @@ export default function Pos() {
     setPaymentMethod('cash');
   };
 
+  // Show cash register selection screen
+  if (showRegisterSelection) {
+    return (
+      <div className="flex" style={{ height: 'calc(100vh - 64px)' }}>
+        {/* Left Sidebar - Empty as per wireframe */}
+        <div className="w-20 bg-gray-50 border-r border-gray-200"></div>
+
+        {/* Main Content */}
+        <div className="flex-1 flex items-center justify-center bg-gray-50 p-8">
+          <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-[#212121] mb-1">Caja</h2>
+              <p className="text-sm text-gray-600 mb-6">Selecciona una caja registradora para comenzar</p>
+
+              {/* Cash Register Selection */}
+              <div className="space-y-2 mb-6">
+                {cashRegisters.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Store className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 text-sm">No hay cajas registradoras disponibles</p>
+                  </div>
+                ) : (
+                  cashRegisters.map((register) => (
+                    <button
+                      key={register.id}
+                      onClick={() => setSelectedRegister(register.id)}
+                      className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+                        selectedRegister === register.id
+                          ? 'border-[#FF6B00] bg-[#FF6B00] bg-opacity-5'
+                          : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-[#212121]">{register.name}</p>
+                          {register.location && (
+                            <p className="text-sm text-gray-600">{register.location}</p>
+                          )}
+                        </div>
+                        {selectedRegister === register.id && (
+                          <div className="w-5 h-5 bg-[#FF6B00] rounded-full flex items-center justify-center">
+                            <div className="w-2 h-2 bg-white rounded-full"></div>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Date Field */}
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-[#212121] mb-2 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#FF6B00]" />
+                Fecha
+              </label>
+              <input
+                type="date"
+                value={sessionDate}
+                onChange={(e) => setSessionDate(e.target.value)}
+                className="input-field w-full"
+              />
+            </div>
+
+            {/* Opening Balance Field */}
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-[#212121] mb-2">
+                Balance Inicial (RD$)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={openingBalance}
+                onChange={(e) => setOpeningBalance(e.target.value)}
+                placeholder="0.00"
+                className="input-field w-full"
+              />
+            </div>
+
+            {/* Start Session Button */}
+            <button
+              onClick={openSession}
+              disabled={!selectedRegister || sessionLoading}
+              className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {sessionLoading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Iniciando...
+                </>
+              ) : (
+                <>
+                  <Play className="w-5 h-5" />
+                  Iniciar Sesión
+                </>
+              )}
+            </button>
+
+            {!selectedRegister && (
+              <p className="text-xs text-yellow-600 mt-3 text-center">
+                ⚠️ Debes seleccionar una caja para continuar
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show POS interface after session is opened
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 64px)' }}>
       {/* Header */}
@@ -205,7 +539,28 @@ export default function Pos() {
               <ShoppingCart className="w-8 h-8 text-[#FF6B00]" />
               Punto de Venta
             </h1>
-            <p className="text-gray-600 mt-1">Punto de venta rápido</p>
+            <div className="flex items-center gap-4 mt-1">
+              <p className="text-gray-600">Punto de venta rápido</p>
+              {activeSession && (
+                <div className="flex items-center gap-2">
+                  <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-600 rounded-full animate-pulse"></div>
+                    Sesión activa
+                  </div>
+                  {cashRegisters.find(r => r.id === activeSession.cash_register_id) && (
+                    <span className="text-sm text-gray-600">
+                      {cashRegisters.find(r => r.id === activeSession.cash_register_id).name}
+                    </span>
+                  )}
+                  <button
+                    onClick={openCloseSessionModal}
+                    className="text-xs text-red-600 hover:text-red-800 font-medium"
+                  >
+                    Cerrar sesión
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           {selectedCustomer && (
             <div className="bg-[#F5F5F5] rounded-lg px-4 py-2">
@@ -766,6 +1121,211 @@ export default function Pos() {
             startNewSale();
           }}
         />
+      )}
+
+      {/* Modal de Cerrar Sesión */}
+      {showCloseSessionModal && activeSession && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-card-hover max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-[#212121]">Cerrar Sesión de Caja</h2>
+              <button
+                onClick={() => {
+                  setShowCloseSessionModal(false);
+                  setSessionSummary(null);
+                  setCountedCash('');
+                  setClosingNotes('');
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Resumen de ventas esperadas */}
+              <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-3">
+                <h3 className="text-lg font-semibold text-[#212121] mb-4">Resumen de Ventas</h3>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Wallet className="w-5 h-5 text-[#FF6B00]" />
+                      <span className="text-sm font-medium text-gray-600">Balance Inicial</span>
+                    </div>
+                    <p className="text-2xl font-bold text-[#212121]">
+                      RD$ {(sessionSummary?.session?.opening_balance || sessionSummary?.Session?.opening_balance || activeSession?.opening_balance || 0).toFixed(2)}
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <DollarSign className="w-5 h-5 text-green-600" />
+                      <span className="text-sm font-medium text-gray-600">Ventas en Efectivo</span>
+                    </div>
+                    <p className="text-2xl font-bold text-[#212121]">
+                      RD$ {(sessionSummary?.sales_by_payment_type?.cash || sessionSummary?.SalesByPaymentType?.cash || 0).toFixed(2)}
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CreditCard className="w-5 h-5 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-600">Ventas con Tarjeta</span>
+                    </div>
+                    <p className="text-2xl font-bold text-[#212121]">
+                      RD$ {(sessionSummary?.sales_by_payment_type?.card || sessionSummary?.SalesByPaymentType?.card || 0).toFixed(2)}
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CreditCard className="w-5 h-5 text-purple-600" />
+                      <span className="text-sm font-medium text-gray-600">Transferencias</span>
+                    </div>
+                    <p className="text-2xl font-bold text-[#212121]">
+                      RD$ {(sessionSummary?.sales_by_payment_type?.transfer || sessionSummary?.SalesByPaymentType?.transfer || 0).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-[#FF6B00] bg-opacity-10 border-2 border-[#FF6B00] rounded-lg p-4 mt-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-lg font-semibold text-[#212121]">Efectivo Esperado Total:</span>
+                    <span className="text-2xl font-bold text-[#FF6B00]">
+                      RD$ {((sessionSummary?.session?.opening_balance || sessionSummary?.Session?.opening_balance || activeSession?.opening_balance || 0) + (sessionSummary?.sales_by_payment_type?.cash || sessionSummary?.SalesByPaymentType?.cash || 0)).toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Balance inicial + Ventas en efectivo
+                  </p>
+                </div>
+
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-lg font-semibold text-gray-700">Total de Ventas:</span>
+                    <span className="text-2xl font-bold text-green-700">
+                      RD$ {(sessionSummary?.total_sales || sessionSummary?.TotalSales || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {getSummaryValue().totalTransactions} transacción(es)
+                  </p>
+                </div>
+              </div>
+
+              {/* Campo para ingresar efectivo contado */}
+              <div>
+                <label className="block text-sm font-semibold text-[#212121] mb-2 flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-[#FF6B00]" />
+                  Efectivo Contado (RD$)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={countedCash}
+                  onChange={(e) => setCountedCash(e.target.value)}
+                  placeholder="0.00"
+                  className="input-field w-full text-lg"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Ingresa la cantidad de efectivo que realmente tienes disponible
+                </p>
+              </div>
+
+              {/* Diferencia calculada */}
+              {countedCash && !isNaN(parseFloat(countedCash)) && (
+                <div className={`rounded-lg p-4 border-2 ${
+                  (() => {
+                    const openingBalance = sessionSummary?.session?.opening_balance || sessionSummary?.Session?.opening_balance || activeSession?.opening_balance || 0;
+                    const cashSales = sessionSummary?.sales_by_payment_type?.cash || sessionSummary?.SalesByPaymentType?.cash || 0;
+                    const expectedCash = openingBalance + cashSales;
+                    const difference = parseFloat(countedCash) - expectedCash;
+                    return difference === 0 ? 'bg-green-50 border-green-300' : difference < 0 ? 'bg-red-50 border-red-300' : 'bg-yellow-50 border-yellow-300';
+                  })()
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-lg font-semibold text-gray-700">Diferencia:</span>
+                    <span className={`text-2xl font-bold ${
+                      (() => {
+                        const { expectedCash } = getSummaryValue();
+                        const difference = parseFloat(countedCash) - expectedCash;
+                        return difference === 0 ? 'text-green-700' : difference < 0 ? 'text-red-700' : 'text-yellow-700';
+                      })()
+                    }`}>
+                      RD$ {(() => {
+                        const { expectedCash } = getSummaryValue();
+                        return (parseFloat(countedCash) - expectedCash).toFixed(2);
+                      })()}
+                    </span>
+                  </div>
+                  {(() => {
+                    const { expectedCash } = getSummaryValue();
+                    return (parseFloat(countedCash) - expectedCash) !== 0;
+                  })() && (
+                    <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-4 h-4" />
+                      {(() => {
+                        const { expectedCash } = getSummaryValue();
+                        const difference = parseFloat(countedCash) - expectedCash;
+                        return difference < 0 ? 'Falta efectivo en caja' : 'Hay más efectivo del esperado';
+                      })()}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Notas opcionales */}
+              <div>
+                <label className="block text-sm font-semibold text-[#212121] mb-2">
+                  Notas (opcional)
+                </label>
+                <textarea
+                  value={closingNotes}
+                  onChange={(e) => setClosingNotes(e.target.value)}
+                  placeholder="Observaciones sobre el cierre de sesión..."
+                  className="input-field w-full"
+                  rows="3"
+                />
+              </div>
+
+              {/* Botones de acción */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowCloseSessionModal(false);
+                    setSessionSummary(null);
+                    setCountedCash('');
+                    setClosingNotes('');
+                  }}
+                  className="btn-outline flex-1"
+                  disabled={closingSession}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={closeSession}
+                  disabled={closingSession || !countedCash || isNaN(parseFloat(countedCash)) || parseFloat(countedCash) < 0}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {closingSession ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Cerrando...
+                    </>
+                  ) : (
+                    <>
+                      <X className="w-5 h-5" />
+                      Confirmar Cierre
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -5,6 +5,9 @@
 SET search_path TO tenant_demo;
 
 -- Limpiar datos existentes (en orden debido a foreign keys)
+DELETE FROM payroll_entries;
+DELETE FROM payroll_periods;
+DELETE FROM employees;
 DELETE FROM invoice_lines;
 DELETE FROM invoices;
 DELETE FROM payment_allocations;
@@ -12,6 +15,446 @@ DELETE FROM payments;
 DELETE FROM products;
 DELETE FROM customers;
 DELETE FROM suppliers;
+
+-- ====================
+-- EMPLEADOS
+-- ====================
+
+INSERT INTO employees (
+  id, employee_code, first_name, last_name, email, phone, tax_id,
+  address, city, state, postal_code, country, department, position,
+  hire_date, salary, salary_type, is_active, metadata, created_at, updated_at
+)
+VALUES
+  (gen_random_uuid(), 'EMP-001', 'Carolina', 'Martínez', 'carolina.martinez@vendixdemo.do', '809-555-3001', '001-8899001-2', 'Av. Gustavo M. Ricart #45', 'Santo Domingo', 'DN', '10129', 'DO', 'Operaciones', 'Gerente de Operaciones', CURRENT_DATE - INTERVAL '720 days', 68000.00, 'monthly', true, jsonb_build_object('contract_type', 'indefinido', 'bank_account', '001-456789-1'), NOW() - INTERVAL '720 days', NOW()),
+  (gen_random_uuid(), 'EMP-002', 'Luis', 'Fernández', 'luis.fernandez@vendixdemo.do', '809-555-3002', '001-2233445-6', 'Calle José Amado Soler #12', 'Santo Domingo', 'DN', '10127', 'DO', 'Ventas', 'Ejecutivo Comercial', CURRENT_DATE - INTERVAL '540 days', 45000.00, 'monthly', true, jsonb_build_object('commission_rate', 0.03, 'bank_account', '001-112233-4'), NOW() - INTERVAL '540 days', NOW()),
+  (gen_random_uuid(), 'EMP-003', 'Mariela', 'Suárez', 'mariela.suarez@vendixdemo.do', '809-555-3003', '001-4455667-8', 'Residencial Don Honorio #8', 'Santo Domingo Oeste', 'SDO', '10903', 'DO', 'Soporte', 'Especialista de Soporte', CURRENT_DATE - INTERVAL '365 days', 320.00, 'hourly', true, jsonb_build_object('shift', 'nocturno', 'bank_account', '001-665544-7'), NOW() - INTERVAL '365 days', NOW()),
+  (gen_random_uuid(), 'EMP-004', 'Raúl', 'Peña', 'raul.pena@vendixdemo.do', '829-555-3004', '002-5566778-9', 'Residencial Praderas del Este', 'Santo Domingo Este', 'SDE', '11517', 'DO', 'Logística', 'Coordinador de Despacho', CURRENT_DATE - INTERVAL '410 days', 26800.00, 'daily', true, jsonb_build_object('transport_allowance', true, 'bank_account', '001-778899-0'), NOW() - INTERVAL '410 days', NOW());
+
+-- ====================
+-- NOMINA (PERIODOS Y ENTRADAS)
+-- ====================
+
+DO $$
+DECLARE
+  period_jan UUID := gen_random_uuid();
+  period_feb UUID := gen_random_uuid();
+  emp_ops employees%ROWTYPE;
+  emp_sales employees%ROWTYPE;
+  emp_support employees%ROWTYPE;
+  emp_log employees%ROWTYPE;
+  current_emp employees%ROWTYPE;
+  hours_worked NUMERIC;
+  days_worked NUMERIC;
+  overtime_hours NUMERIC;
+  bonuses NUMERIC;
+  commissions NUMERIC;
+  other_deductions NUMERIC;
+  base_salary NUMERIC;
+  entry_gross_salary NUMERIC;
+  entry_overtime_pay NUMERIC;
+  entry_total_gross NUMERIC;
+  entry_tax NUMERIC;
+  entry_social NUMERIC;
+  entry_total_deductions NUMERIC;
+  entry_net NUMERIC;
+  entry_id UUID;
+BEGIN
+  SELECT * INTO emp_ops FROM employees WHERE employee_code = 'EMP-001' LIMIT 1;
+  SELECT * INTO emp_sales FROM employees WHERE employee_code = 'EMP-002' LIMIT 1;
+  SELECT * INTO emp_support FROM employees WHERE employee_code = 'EMP-003' LIMIT 1;
+  SELECT * INTO emp_log FROM employees WHERE employee_code = 'EMP-004' LIMIT 1;
+
+  INSERT INTO payroll_periods (id, period_code, period_start, period_end, status, total_gross, total_deductions, total_net, notes, created_by, created_at, updated_at)
+  VALUES
+    (period_jan, '2025-01', DATE '2025-01-01', DATE '2025-01-31', 'completed', 0, 0, 0, 'Nómina Enero 2025', NULL, NOW() - INTERVAL '60 days', NOW() - INTERVAL '60 days'),
+    (period_feb, '2025-02', DATE '2025-02-01', DATE '2025-02-28', 'processing', 0, 0, 0, 'Nómina Febrero 2025 (en progreso)', NULL, NOW() - INTERVAL '30 days', NOW() - INTERVAL '5 days');
+
+  -- Período enero 2025 - Carolina Martínez
+  current_emp := emp_ops;
+  hours_worked := NULL;
+  days_worked := NULL;
+  overtime_hours := 10;
+  bonuses := 7000;
+  commissions := 1500;
+  other_deductions := 2800;
+  base_salary := COALESCE(current_emp.salary, 0);
+  IF current_emp.salary_type = 'monthly' THEN
+    entry_gross_salary := base_salary;
+    entry_overtime_pay := (base_salary / 160.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'hourly' THEN
+    entry_gross_salary := base_salary * COALESCE(hours_worked, 0);
+    entry_overtime_pay := base_salary * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'daily' THEN
+    entry_gross_salary := (base_salary / 22.0) * COALESCE(days_worked, 0);
+    entry_overtime_pay := ((base_salary / 22.0) / 8.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSE
+    RAISE EXCEPTION 'Tipo de salario no soportado: %', current_emp.salary_type;
+  END IF;
+  entry_total_gross := entry_gross_salary + entry_overtime_pay + bonuses + commissions;
+  IF entry_total_gross <= 416220 THEN
+    entry_tax := entry_total_gross * 0.15;
+  ELSE
+    entry_tax := 416220 * 0.15 + (entry_total_gross - 416220) * 0.20;
+  END IF;
+  entry_social := entry_total_gross * 0.0304;
+  entry_total_deductions := entry_tax + entry_social + other_deductions;
+  entry_net := entry_total_gross - entry_total_deductions;
+
+  entry_gross_salary := ROUND(entry_gross_salary, 2);
+  entry_overtime_pay := ROUND(entry_overtime_pay, 2);
+  entry_total_gross := ROUND(entry_total_gross, 2);
+  entry_tax := ROUND(entry_tax, 2);
+  entry_social := ROUND(entry_social, 2);
+  entry_total_deductions := ROUND(entry_total_deductions, 2);
+  entry_net := ROUND(entry_net, 2);
+
+  entry_id := gen_random_uuid();
+  INSERT INTO payroll_entries (
+    id, payroll_period_id, employee_id, employee_code, employee_name,
+    department, position, salary, salary_type, hours_worked, days_worked,
+    gross_salary, overtime_hours, overtime_pay, bonuses, commissions,
+    total_gross, tax_deduction, social_security, other_deductions,
+    total_deductions, net_salary, notes, created_at, updated_at
+  )
+  VALUES (
+    entry_id, period_jan, current_emp.id, current_emp.employee_code,
+    current_emp.first_name || ' ' || current_emp.last_name, current_emp.department, current_emp.position,
+    entry_gross_salary, current_emp.salary_type, hours_worked, days_worked,
+    entry_gross_salary, overtime_hours, entry_overtime_pay, bonuses, commissions,
+    entry_total_gross, entry_tax, entry_social, other_deductions,
+    entry_total_deductions, entry_net, 'Incluye bono por metas y horas extras de soporte a clientes',
+    NOW() - INTERVAL '45 days', NOW() - INTERVAL '45 days'
+  );
+
+  UPDATE payroll_periods
+  SET total_gross = ROUND(total_gross + entry_total_gross, 2),
+      total_deductions = ROUND(total_deductions + entry_total_deductions, 2),
+      total_net = ROUND(total_net + entry_net, 2),
+      updated_at = NOW()
+  WHERE id = period_jan;
+
+  -- Período enero 2025 - Luis Fernández
+  current_emp := emp_sales;
+  hours_worked := NULL;
+  days_worked := NULL;
+  overtime_hours := 0;
+  bonuses := 3500;
+  commissions := 12000;
+  other_deductions := 1800;
+  base_salary := COALESCE(current_emp.salary, 0);
+  IF current_emp.salary_type = 'monthly' THEN
+    entry_gross_salary := base_salary;
+    entry_overtime_pay := (base_salary / 160.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'hourly' THEN
+    entry_gross_salary := base_salary * COALESCE(hours_worked, 0);
+    entry_overtime_pay := base_salary * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'daily' THEN
+    entry_gross_salary := (base_salary / 22.0) * COALESCE(days_worked, 0);
+    entry_overtime_pay := ((base_salary / 22.0) / 8.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSE
+    RAISE EXCEPTION 'Tipo de salario no soportado: %', current_emp.salary_type;
+  END IF;
+  entry_total_gross := entry_gross_salary + entry_overtime_pay + bonuses + commissions;
+  IF entry_total_gross <= 416220 THEN
+    entry_tax := entry_total_gross * 0.15;
+  ELSE
+    entry_tax := 416220 * 0.15 + (entry_total_gross - 416220) * 0.20;
+  END IF;
+  entry_social := entry_total_gross * 0.0304;
+  entry_total_deductions := entry_tax + entry_social + other_deductions;
+  entry_net := entry_total_gross - entry_total_deductions;
+
+  entry_gross_salary := ROUND(entry_gross_salary, 2);
+  entry_overtime_pay := ROUND(entry_overtime_pay, 2);
+  entry_total_gross := ROUND(entry_total_gross, 2);
+  entry_tax := ROUND(entry_tax, 2);
+  entry_social := ROUND(entry_social, 2);
+  entry_total_deductions := ROUND(entry_total_deductions, 2);
+  entry_net := ROUND(entry_net, 2);
+
+  entry_id := gen_random_uuid();
+  INSERT INTO payroll_entries (
+    id, payroll_period_id, employee_id, employee_code, employee_name,
+    department, position, salary, salary_type, hours_worked, days_worked,
+    gross_salary, overtime_hours, overtime_pay, bonuses, commissions,
+    total_gross, tax_deduction, social_security, other_deductions,
+    total_deductions, net_salary, notes, created_at, updated_at
+  )
+  VALUES (
+    entry_id, period_jan, current_emp.id, current_emp.employee_code,
+    current_emp.first_name || ' ' || current_emp.last_name, current_emp.department, current_emp.position,
+    entry_gross_salary, current_emp.salary_type, hours_worked, days_worked,
+    entry_gross_salary, overtime_hours, entry_overtime_pay, bonuses, commissions,
+    entry_total_gross, entry_tax, entry_social, other_deductions,
+    entry_total_deductions, entry_net, 'Comisiones por nuevas cuentas corporativas',
+    NOW() - INTERVAL '45 days', NOW() - INTERVAL '45 days'
+  );
+
+  UPDATE payroll_periods
+  SET total_gross = ROUND(total_gross + entry_total_gross, 2),
+      total_deductions = ROUND(total_deductions + entry_total_deductions, 2),
+      total_net = ROUND(total_net + entry_net, 2),
+      updated_at = NOW()
+  WHERE id = period_jan;
+
+  -- Período enero 2025 - Mariela Suárez
+  current_emp := emp_support;
+  hours_worked := 168;
+  days_worked := NULL;
+  overtime_hours := 6;
+  bonuses := 2500;
+  commissions := 0;
+  other_deductions := 900;
+  base_salary := COALESCE(current_emp.salary, 0);
+  IF current_emp.salary_type = 'monthly' THEN
+    entry_gross_salary := base_salary;
+    entry_overtime_pay := (base_salary / 160.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'hourly' THEN
+    entry_gross_salary := base_salary * COALESCE(hours_worked, 0);
+    entry_overtime_pay := base_salary * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'daily' THEN
+    entry_gross_salary := (base_salary / 22.0) * COALESCE(days_worked, 0);
+    entry_overtime_pay := ((base_salary / 22.0) / 8.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSE
+    RAISE EXCEPTION 'Tipo de salario no soportado: %', current_emp.salary_type;
+  END IF;
+  entry_total_gross := entry_gross_salary + entry_overtime_pay + bonuses + commissions;
+  IF entry_total_gross <= 416220 THEN
+    entry_tax := entry_total_gross * 0.15;
+  ELSE
+    entry_tax := 416220 * 0.15 + (entry_total_gross - 416220) * 0.20;
+  END IF;
+  entry_social := entry_total_gross * 0.0304;
+  entry_total_deductions := entry_tax + entry_social + other_deductions;
+  entry_net := entry_total_gross - entry_total_deductions;
+
+  entry_gross_salary := ROUND(entry_gross_salary, 2);
+  entry_overtime_pay := ROUND(entry_overtime_pay, 2);
+  entry_total_gross := ROUND(entry_total_gross, 2);
+  entry_tax := ROUND(entry_tax, 2);
+  entry_social := ROUND(entry_social, 2);
+  entry_total_deductions := ROUND(entry_total_deductions, 2);
+  entry_net := ROUND(entry_net, 2);
+
+  entry_id := gen_random_uuid();
+  INSERT INTO payroll_entries (
+    id, payroll_period_id, employee_id, employee_code, employee_name,
+    department, position, salary, salary_type, hours_worked, days_worked,
+    gross_salary, overtime_hours, overtime_pay, bonuses, commissions,
+    total_gross, tax_deduction, social_security, other_deductions,
+    total_deductions, net_salary, notes, created_at, updated_at
+  )
+  VALUES (
+    entry_id, period_jan, current_emp.id, current_emp.employee_code,
+    current_emp.first_name || ' ' || current_emp.last_name, current_emp.department, current_emp.position,
+    entry_gross_salary, current_emp.salary_type, hours_worked, days_worked,
+    entry_gross_salary, overtime_hours, entry_overtime_pay, bonuses, commissions,
+    entry_total_gross, entry_tax, entry_social, other_deductions,
+    entry_total_deductions, entry_net, 'Guardias nocturnas y soporte crítico a clientes',
+    NOW() - INTERVAL '45 days', NOW() - INTERVAL '45 days'
+  );
+
+  UPDATE payroll_periods
+  SET total_gross = ROUND(total_gross + entry_total_gross, 2),
+      total_deductions = ROUND(total_deductions + entry_total_deductions, 2),
+      total_net = ROUND(total_net + entry_net, 2),
+      updated_at = NOW()
+  WHERE id = period_jan;
+
+  -- Período enero 2025 - Raúl Peña
+  current_emp := emp_log;
+  hours_worked := NULL;
+  days_worked := 24;
+  overtime_hours := 4;
+  bonuses := 1800;
+  commissions := 0;
+  other_deductions := 600;
+  base_salary := COALESCE(current_emp.salary, 0);
+  IF current_emp.salary_type = 'monthly' THEN
+    entry_gross_salary := base_salary;
+    entry_overtime_pay := (base_salary / 160.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'hourly' THEN
+    entry_gross_salary := base_salary * COALESCE(hours_worked, 0);
+    entry_overtime_pay := base_salary * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'daily' THEN
+    entry_gross_salary := (base_salary / 22.0) * COALESCE(days_worked, 0);
+    entry_overtime_pay := ((base_salary / 22.0) / 8.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSE
+    RAISE EXCEPTION 'Tipo de salario no soportado: %', current_emp.salary_type;
+  END IF;
+  entry_total_gross := entry_gross_salary + entry_overtime_pay + bonuses + commissions;
+  IF entry_total_gross <= 416220 THEN
+    entry_tax := entry_total_gross * 0.15;
+  ELSE
+    entry_tax := 416220 * 0.15 + (entry_total_gross - 416220) * 0.20;
+  END IF;
+  entry_social := entry_total_gross * 0.0304;
+  entry_total_deductions := entry_tax + entry_social + other_deductions;
+  entry_net := entry_total_gross - entry_total_deductions;
+
+  entry_gross_salary := ROUND(entry_gross_salary, 2);
+  entry_overtime_pay := ROUND(entry_overtime_pay, 2);
+  entry_total_gross := ROUND(entry_total_gross, 2);
+  entry_tax := ROUND(entry_tax, 2);
+  entry_social := ROUND(entry_social, 2);
+  entry_total_deductions := ROUND(entry_total_deductions, 2);
+  entry_net := ROUND(entry_net, 2);
+
+  entry_id := gen_random_uuid();
+  INSERT INTO payroll_entries (
+    id, payroll_period_id, employee_id, employee_code, employee_name,
+    department, position, salary, salary_type, hours_worked, days_worked,
+    gross_salary, overtime_hours, overtime_pay, bonuses, commissions,
+    total_gross, tax_deduction, social_security, other_deductions,
+    total_deductions, net_salary, notes, created_at, updated_at
+  )
+  VALUES (
+    entry_id, period_jan, current_emp.id, current_emp.employee_code,
+    current_emp.first_name || ' ' || current_emp.last_name, current_emp.department, current_emp.position,
+    entry_gross_salary, current_emp.salary_type, hours_worked, days_worked,
+    entry_gross_salary, overtime_hours, entry_overtime_pay, bonuses, commissions,
+    entry_total_gross, entry_tax, entry_social, other_deductions,
+    entry_total_deductions, entry_net, 'Turnos extendidos por incremento en despachos',
+    NOW() - INTERVAL '45 days', NOW() - INTERVAL '45 days'
+  );
+
+  UPDATE payroll_periods
+  SET total_gross = ROUND(total_gross + entry_total_gross, 2),
+      total_deductions = ROUND(total_deductions + entry_total_deductions, 2),
+      total_net = ROUND(total_net + entry_net, 2),
+      updated_at = NOW()
+  WHERE id = period_jan;
+
+  -- Período febrero 2025 - Carolina Martínez
+  current_emp := emp_ops;
+  hours_worked := NULL;
+  days_worked := NULL;
+  overtime_hours := 6;
+  bonuses := 4500;
+  commissions := 0;
+  other_deductions := 2500;
+  base_salary := COALESCE(current_emp.salary, 0);
+  IF current_emp.salary_type = 'monthly' THEN
+    entry_gross_salary := base_salary;
+    entry_overtime_pay := (base_salary / 160.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'hourly' THEN
+    entry_gross_salary := base_salary * COALESCE(hours_worked, 0);
+    entry_overtime_pay := base_salary * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'daily' THEN
+    entry_gross_salary := (base_salary / 22.0) * COALESCE(days_worked, 0);
+    entry_overtime_pay := ((base_salary / 22.0) / 8.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSE
+    RAISE EXCEPTION 'Tipo de salario no soportado: %', current_emp.salary_type;
+  END IF;
+  entry_total_gross := entry_gross_salary + entry_overtime_pay + bonuses + commissions;
+  IF entry_total_gross <= 416220 THEN
+    entry_tax := entry_total_gross * 0.15;
+  ELSE
+    entry_tax := 416220 * 0.15 + (entry_total_gross - 416220) * 0.20;
+  END IF;
+  entry_social := entry_total_gross * 0.0304;
+  entry_total_deductions := entry_tax + entry_social + other_deductions;
+  entry_net := entry_total_gross - entry_total_deductions;
+
+  entry_gross_salary := ROUND(entry_gross_salary, 2);
+  entry_overtime_pay := ROUND(entry_overtime_pay, 2);
+  entry_total_gross := ROUND(entry_total_gross, 2);
+  entry_tax := ROUND(entry_tax, 2);
+  entry_social := ROUND(entry_social, 2);
+  entry_total_deductions := ROUND(entry_total_deductions, 2);
+  entry_net := ROUND(entry_net, 2);
+
+  entry_id := gen_random_uuid();
+  INSERT INTO payroll_entries (
+    id, payroll_period_id, employee_id, employee_code, employee_name,
+    department, position, salary, salary_type, hours_worked, days_worked,
+    gross_salary, overtime_hours, overtime_pay, bonuses, commissions,
+    total_gross, tax_deduction, social_security, other_deductions,
+    total_deductions, net_salary, notes, created_at, updated_at
+  )
+  VALUES (
+    entry_id, period_feb, current_emp.id, current_emp.employee_code,
+    current_emp.first_name || ' ' || current_emp.last_name, current_emp.department, current_emp.position,
+    entry_gross_salary, current_emp.salary_type, hours_worked, days_worked,
+    entry_gross_salary, overtime_hours, entry_overtime_pay, bonuses, commissions,
+    entry_total_gross, entry_tax, entry_social, other_deductions,
+    entry_total_deductions, entry_net, 'Planificación de expansión logística',
+    NOW() - INTERVAL '15 days', NOW() - INTERVAL '15 days'
+  );
+
+  UPDATE payroll_periods
+  SET total_gross = ROUND(total_gross + entry_total_gross, 2),
+      total_deductions = ROUND(total_deductions + entry_total_deductions, 2),
+      total_net = ROUND(total_net + entry_net, 2),
+      updated_at = NOW()
+  WHERE id = period_feb;
+
+  -- Período febrero 2025 - Luis Fernández
+  current_emp := emp_sales;
+  hours_worked := NULL;
+  days_worked := NULL;
+  overtime_hours := 0;
+  bonuses := 2500;
+  commissions := 8500;
+  other_deductions := 1800;
+  base_salary := COALESCE(current_emp.salary, 0);
+  IF current_emp.salary_type = 'monthly' THEN
+    entry_gross_salary := base_salary;
+    entry_overtime_pay := (base_salary / 160.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'hourly' THEN
+    entry_gross_salary := base_salary * COALESCE(hours_worked, 0);
+    entry_overtime_pay := base_salary * 1.5 * COALESCE(overtime_hours, 0);
+  ELSIF current_emp.salary_type = 'daily' THEN
+    entry_gross_salary := (base_salary / 22.0) * COALESCE(days_worked, 0);
+    entry_overtime_pay := ((base_salary / 22.0) / 8.0) * 1.5 * COALESCE(overtime_hours, 0);
+  ELSE
+    RAISE EXCEPTION 'Tipo de salario no soportado: %', current_emp.salary_type;
+  END IF;
+  entry_total_gross := entry_gross_salary + entry_overtime_pay + bonuses + commissions;
+  IF entry_total_gross <= 416220 THEN
+    entry_tax := entry_total_gross * 0.15;
+  ELSE
+    entry_tax := 416220 * 0.15 + (entry_total_gross - 416220) * 0.20;
+  END IF;
+  entry_social := entry_total_gross * 0.0304;
+  entry_total_deductions := entry_tax + entry_social + other_deductions;
+  entry_net := entry_total_gross - entry_total_deductions;
+
+  entry_gross_salary := ROUND(entry_gross_salary, 2);
+  entry_overtime_pay := ROUND(entry_overtime_pay, 2);
+  entry_total_gross := ROUND(entry_total_gross, 2);
+  entry_tax := ROUND(entry_tax, 2);
+  entry_social := ROUND(entry_social, 2);
+  entry_total_deductions := ROUND(entry_total_deductions, 2);
+  entry_net := ROUND(entry_net, 2);
+
+  entry_id := gen_random_uuid();
+  INSERT INTO payroll_entries (
+    id, payroll_period_id, employee_id, employee_code, employee_name,
+    department, position, salary, salary_type, hours_worked, days_worked,
+    gross_salary, overtime_hours, overtime_pay, bonuses, commissions,
+    total_gross, tax_deduction, social_security, other_deductions,
+    total_deductions, net_salary, notes, created_at, updated_at
+  )
+  VALUES (
+    entry_id, period_feb, current_emp.id, current_emp.employee_code,
+    current_emp.first_name || ' ' || current_emp.last_name, current_emp.department, current_emp.position,
+    entry_gross_salary, current_emp.salary_type, hours_worked, days_worked,
+    entry_gross_salary, overtime_hours, entry_overtime_pay, bonuses, commissions,
+    entry_total_gross, entry_tax, entry_social, other_deductions,
+    entry_total_deductions, entry_net, 'Campaña de relanzamiento de servicios premium',
+    NOW() - INTERVAL '15 days', NOW() - INTERVAL '15 days'
+  );
+
+  UPDATE payroll_periods
+  SET total_gross = ROUND(total_gross + entry_total_gross, 2),
+      total_deductions = ROUND(total_deductions + entry_total_deductions, 2),
+      total_net = ROUND(total_net + entry_net, 2),
+      updated_at = NOW()
+  WHERE id = period_feb;
+END;
+$$;
 
 -- ====================
 -- CLIENTES
@@ -272,7 +715,13 @@ SELECT 'Facturas insertadas:', COUNT(*) FROM invoices
 UNION ALL
 SELECT 'Líneas de factura:', COUNT(*) FROM invoice_lines
 UNION ALL
-SELECT 'Gastos insertados:', COUNT(*) FROM payments;
+SELECT 'Gastos insertados:', COUNT(*) FROM payments
+UNION ALL
+SELECT 'Empleados insertados:', COUNT(*) FROM employees
+UNION ALL
+SELECT 'Períodos de nómina:', COUNT(*) FROM payroll_periods
+UNION ALL
+SELECT 'Entradas de nómina:', COUNT(*) FROM payroll_entries;
 
 -- Mostrar resumen de facturas por estado
 SELECT 
@@ -282,3 +731,13 @@ SELECT
 FROM invoices
 GROUP BY status
 ORDER BY status;
+
+-- Resumen de nómina por período
+SELECT
+  period_code,
+  status,
+  total_gross,
+  total_deductions,
+  total_net
+FROM payroll_periods
+ORDER BY period_code;

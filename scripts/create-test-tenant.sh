@@ -9,7 +9,7 @@ API_URL="${API_URL:-http://localhost:8080}"
 echo "Creating test tenant..."
 
 # Create tenant
-RESPONSE=$(curl -s -X POST "http://localhost:8080/api/v1/public/tenants" \
+RESPONSE=$(curl -s -X POST "${API_URL}/api/v1/public/tenants" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Demo Company",

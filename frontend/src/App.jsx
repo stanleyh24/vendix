@@ -14,6 +14,8 @@ import Accounting from './pages/Accounting'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import StyleGuide from './pages/StyleGuide'
+import Employees from './pages/Employees'
+import Payroll from './pages/Payroll'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }) {
@@ -40,6 +42,8 @@ function App() {
           <Route path="expenses" element={<Expenses />} />
           <Route path="invoices" element={<Invoices />} />
           <Route path="accounting" element={<Accounting />} />
+          <Route path="employees" element={<Employees />} />
+          <Route path="payroll" element={<Payroll />} />
           <Route path="settings" element={<Settings />} />
           <Route path="style-guide" element={<StyleGuide />} />
         </Route>
