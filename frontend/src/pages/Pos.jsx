@@ -271,7 +271,8 @@ export default function Pos() {
   const loadProducts = async () => {
     try {
       const response = await api.get('/products');
-      setProducts(response.data?.filter(p => p.is_active) || []);
+      // Solo mostrar productos activos con stock > 0
+      setProducts(response.data?.filter(p => p.is_active && p.stock_quantity > 0) || []);
     } catch (error) {
       console.error('Error loading products:', error);
     }
@@ -300,7 +301,15 @@ export default function Pos() {
     setSearchCustomer('');
     
     // Si se selecciona cliente genérico, forzar NCF 02 (Consumidor Final)
+    // Si se selecciona un cliente con RNC, permitir elegir entre 01 y 02
     if (customer.is_generic) {
+      setNcfType('02');
+    } else if (customer.customer_type === 'business' && customer.tax_id) {
+      // Si es empresa con RNC, por defecto usar Crédito Fiscal (01)
+      // pero el usuario puede cambiarlo
+      setNcfType('01');
+    } else {
+      // Para otros clientes, usar Consumidor Final por defecto
       setNcfType('02');
     }
   };
@@ -373,6 +382,7 @@ export default function Pos() {
       const saleData = {
         customer_id: selectedCustomer ? selectedCustomer.id : null,
         payment_type: paymentMethod,
+        ncf_type: ncfType, // Agregar tipo de NCF
         notes: `Venta procesada desde POS - ${paymentMethod}`,
         lines: cart.map(item => ({
           product_id: item.product.id,

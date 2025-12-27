@@ -22,10 +22,11 @@ type Service struct {
 }
 
 func NewService(db *database.DB, cfg *config.Config) *Service {
+	invoiceSvc, _ := invoices.NewService(db, cfg)
 	return &Service{
 		repo:         NewRepository(db),
 		productsRepo: products.NewRepository(db),
-		invoiceSvc:   invoices.NewService(db, cfg),
+		invoiceSvc:   invoiceSvc,
 		cfg:          cfg,
 	}
 }
@@ -140,10 +141,27 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateSaleRequ
 		}
 	}
 
+	// Determinar tipo de NCF (del request o por defecto según cliente)
+	ncfType := req.NCFType
+	if ncfType == "" {
+		// Si no se especifica, usar 02 (Consumidor Final) por defecto
+		ncfType = "02"
+	}
+	
+	// Validar que sea un tipo válido
+	if ncfType != "01" && ncfType != "02" {
+		return nil, fmt.Errorf("invalid ncf_type: must be '01' (Crédito Fiscal) or '02' (Consumidor Final)")
+	}
+
+	// Validar que el crédito fiscal solo se use con clientes específicos (no genéricos)
+	if ncfType == "01" && *customerID == uuid.MustParse("00000000-0000-0000-0000-000000000001") {
+		return nil, fmt.Errorf("NCF tipo '01' (Crédito Fiscal) requiere un cliente específico con RNC, no se puede usar con cliente genérico")
+	}
+
 	// Crear factura automáticamente con status "paid"
 	invoiceReq := &invoices.CreateInvoiceRequest{
 		CustomerID: customerID,
-		NCFType:    "02", // Por defecto: Consumidor Final para ventas
+		NCFType:    ncfType,
 		IssueDate:  time.Now().Format("2006-01-02"),
 		DueDate:    time.Now().Format("2006-01-02"), // Mismo día para ventas
 		Status:     stringPtr("paid"),               // Las facturas de ventas son pagadas automáticamente

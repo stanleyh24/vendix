@@ -460,17 +460,20 @@ $$;
 -- CLIENTES
 -- ====================
 
-INSERT INTO customers (id, name, email, phone, tax_id, address, customer_type, is_active, created_at, updated_at)
+INSERT INTO customers (id, customer_type, tax_id, name, email, phone, address, city, state, postal_code, country, is_active, metadata, created_at, updated_at)
 VALUES
-  (gen_random_uuid(), 'Juan Pérez', 'juan.perez@email.com', '809-555-0101', '001-1234567-8', 'Av. Winston Churchill #45, Santo Domingo', 'individual', true, NOW(), NOW()),
-  (gen_random_uuid(), 'María García', 'maria.garcia@email.com', '809-555-0102', '001-9876543-2', 'Calle El Conde #123, Zona Colonial', 'individual', true, NOW(), NOW()),
-  (gen_random_uuid(), 'Supermercado La Económica SRL', 'contacto@laeconomica.do', '809-555-0201', '130-56789-0', 'Av. 27 de Febrero #890, Santo Domingo', 'business', true, NOW(), NOW()),
-  (gen_random_uuid(), 'Ferretería El Constructor SA', 'ventas@elconstructor.do', '809-555-0202', '130-11223-3', 'Autopista Duarte Km 8, Santo Domingo Norte', 'business', true, NOW(), NOW()),
-  (gen_random_uuid(), 'Restaurante Don Pepe', 'admin@donpepe.do', '809-555-0301', '131-99887-7', 'Calle Hostos #56, Zona Colonial', 'business', true, NOW(), NOW()),
-  (gen_random_uuid(), 'Carlos Rodríguez', 'carlos.rod@email.com', '809-555-0103', '001-5555666-7', 'Los Prados, Santo Domingo', 'individual', true, NOW(), NOW()),
-  (gen_random_uuid(), 'Farmacia Moderna', 'info@farmaciamoderna.do', '809-555-0401', '130-77665-5', 'Av. Abraham Lincoln #234', 'business', true, NOW(), NOW()),
-  (gen_random_uuid(), 'Ana Martínez', 'ana.martinez@email.com', '809-555-0104', '001-3332221-1', 'Naco, Santo Domingo', 'individual', true, NOW(), NOW()),
-  (gen_random_uuid(), 'Gastos Generales', 'gastos@interno.local', NULL, '999-9999999-9', 'Interno', 'business', true, NOW(), NOW());
+  -- Cliente Genérico (creado automáticamente por migración v18, pero se incluye aquí para el seed)
+  ('00000000-0000-0000-0000-000000000001'::UUID, 'individual', '000000000', 'Cliente Genérico', 'generico@sistema.local', NULL, NULL, NULL, NULL, NULL, 'DO', true, '{"is_generic": true, "description": "Cliente genérico para ventas sin identificación específica"}'::JSONB, NOW(), NOW()),
+  -- Clientes de demostración
+  (gen_random_uuid(), 'individual', '001-1234567-8', 'Juan Pérez', 'juan.perez@email.com', '809-555-0101', 'Av. Winston Churchill #45', 'Santo Domingo', 'DN', '10129', 'DO', true, '{}'::JSONB, NOW(), NOW()),
+  (gen_random_uuid(), 'individual', '001-9876543-2', 'María García', 'maria.garcia@email.com', '809-555-0102', 'Calle El Conde #123', 'Santo Domingo', 'DN', '10210', 'DO', true, '{}'::JSONB, NOW(), NOW()),
+  (gen_random_uuid(), 'business', '130-56789-0', 'Supermercado La Económica SRL', 'contacto@laeconomica.do', '809-555-0201', 'Av. 27 de Febrero #890', 'Santo Domingo', 'DN', '10109', 'DO', true, '{}'::JSONB, NOW(), NOW()),
+  (gen_random_uuid(), 'business', '130-11223-3', 'Ferretería El Constructor SA', 'ventas@elconstructor.do', '809-555-0202', 'Autopista Duarte Km 8', 'Santo Domingo Norte', 'SDE', '11517', 'DO', true, '{}'::JSONB, NOW(), NOW()),
+  (gen_random_uuid(), 'business', '131-99887-7', 'Restaurante Don Pepe', 'admin@donpepe.do', '809-555-0301', 'Calle Hostos #56', 'Santo Domingo', 'DN', '10210', 'DO', true, '{}'::JSONB, NOW(), NOW()),
+  (gen_random_uuid(), 'individual', '001-5555666-7', 'Carlos Rodríguez', 'carlos.rod@email.com', '809-555-0103', 'Los Prados', 'Santo Domingo', 'DN', '10129', 'DO', true, '{}'::JSONB, NOW(), NOW()),
+  (gen_random_uuid(), 'business', '130-77665-5', 'Farmacia Moderna', 'info@farmaciamoderna.do', '809-555-0401', 'Av. Abraham Lincoln #234', 'Santo Domingo', 'DN', '10129', 'DO', true, '{}'::JSONB, NOW(), NOW()),
+  (gen_random_uuid(), 'individual', '001-3332221-1', 'Ana Martínez', 'ana.martinez@email.com', '809-555-0104', 'Naco', 'Santo Domingo', 'DN', '10129', 'DO', true, '{}'::JSONB, NOW(), NOW()),
+  (gen_random_uuid(), 'business', '999-9999999-9', 'Gastos Generales', 'gastos@interno.local', NULL, 'Interno', NULL, NULL, NULL, 'DO', true, '{"is_internal": true}'::JSONB, NOW(), NOW());
 
 -- ====================
 -- PROVEEDORES

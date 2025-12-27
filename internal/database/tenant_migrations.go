@@ -541,6 +541,7 @@ func getTenantMigrations() []Migration {
 			SQL: `
 				-- Crear cliente genérico para ventas sin cliente específico
 				-- Este cliente se usa como "Consumidor Final" o "Cliente Genérico"
+				-- Se crea automáticamente en cada nuevo tenant durante la inicialización
 				INSERT INTO customers (
 					id,
 					customer_type,
@@ -551,6 +552,7 @@ func getTenantMigrations() []Migration {
 					address,
 					city,
 					state,
+					postal_code,
 					country,
 					is_active,
 					metadata,
@@ -563,6 +565,7 @@ func getTenantMigrations() []Migration {
 					'000000000',
 					'Cliente Genérico',
 					'generico@sistema.local',
+					NULL,
 					NULL,
 					NULL,
 					NULL,
@@ -843,6 +846,15 @@ func getTenantMigrations() []Migration {
 				);
 
 				CREATE INDEX idx_cash_count_details_session_id ON cash_count_details(session_id);
+			`,
+		},
+		{
+			Version: 29,
+			Name:    "add_document_urls_to_invoices",
+			SQL: `
+				ALTER TABLE invoices 
+				ADD COLUMN IF NOT EXISTS pdf_url TEXT,
+				ADD COLUMN IF NOT EXISTS xml_url TEXT;
 			`,
 		},
 	}

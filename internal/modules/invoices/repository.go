@@ -3,6 +3,7 @@ package invoices
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -28,15 +29,15 @@ func (r *Repository) Create(ctx context.Context, schema string, invoice *Invoice
 
 	// Insert invoice
 	query := fmt.Sprintf(`
-		INSERT INTO %s.invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, terms, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		INSERT INTO %s.invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, terms, pdf_url, xml_url, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 	`, schema)
 
 	_, err = tx.ExecContext(ctx, query,
 		invoice.ID, invoice.InvoiceNumber, invoice.NCF, invoice.NCFType, invoice.CustomerID,
 		invoice.IssueDate, invoice.DueDate, invoice.Status, invoice.Subtotal,
 		invoice.TaxAmount, invoice.Total, invoice.PaidAmount, invoice.Currency,
-		invoice.Notes, invoice.Terms, invoice.CreatedBy, invoice.CreatedAt, invoice.UpdatedAt,
+		invoice.Notes, invoice.Terms, invoice.PDFURL, invoice.XMLURL, invoice.CreatedBy, invoice.CreatedAt, invoice.UpdatedAt,
 	)
 	if err != nil {
 		return err
@@ -67,8 +68,8 @@ func (r *Repository) GetByID(ctx context.Context, schema string, id uuid.UUID) (
 	query := fmt.Sprintf(`
 		SELECT i.id, i.invoice_number, i.ncf, i.ncf_type, i.customer_id, i.issue_date, i.due_date, 
 		       i.status, i.subtotal, i.tax_amount, i.total, i.paid_amount, i.currency,
-		       i.notes, i.terms, i.dgii_status, i.signed_at, i.sent_at, i.created_by,
-		       i.created_at, i.updated_at, c.name as customer_name
+		       i.notes, i.terms, i.dgii_status, i.signed_at, i.sent_at, i.pdf_url, i.xml_url,
+		       i.created_by, i.created_at, i.updated_at, c.name as customer_name
 		FROM %s.invoices i
 		INNER JOIN %s.customers c ON i.customer_id = c.id
 		WHERE i.id = $1
@@ -107,8 +108,8 @@ func (r *Repository) List(ctx context.Context, schema string, status *string) ([
 	baseQuery := fmt.Sprintf(`
 		SELECT i.id, i.invoice_number, i.ncf, i.ncf_type, i.customer_id, i.issue_date, i.due_date,
 		       i.status, i.subtotal, i.tax_amount, i.total, i.paid_amount, i.currency,
-		       i.notes, i.terms, i.dgii_status, i.signed_at, i.sent_at, i.created_by,
-		       i.created_at, i.updated_at, c.name as customer_name
+		       i.notes, i.terms, i.dgii_status, i.signed_at, i.sent_at, i.pdf_url, i.xml_url,
+		       i.created_by, i.created_at, i.updated_at, c.name as customer_name
 		FROM %s.invoices i
 		INNER JOIN %s.customers c ON i.customer_id = c.id
 		WHERE 1=1
@@ -193,4 +194,51 @@ func (r *Repository) GetNextInvoiceNumber(ctx context.Context, schema string, pr
 
 	// Format with padding
 	return fmt.Sprintf("%s%08d", prefix, nextNum), nil
+}
+
+// UpdateDocumentURLs updates the PDF and XML URLs for an invoice
+func (r *Repository) UpdateDocumentURLs(ctx context.Context, schema string, invoiceID uuid.UUID, pdfURL, xmlURL *string) error {
+	query := fmt.Sprintf(`
+		UPDATE %s.invoices
+		SET pdf_url = $1, xml_url = $2, updated_at = $3
+		WHERE id = $4
+	`, schema)
+
+	_, err := r.db.ExecContext(ctx, query, pdfURL, xmlURL, time.Now(), invoiceID)
+	return err
+}
+
+// UpdateDGIIStatus updates the DGII status and related information for an invoice
+func (r *Repository) UpdateDGIIStatus(ctx context.Context, schema string, invoiceID uuid.UUID, status, trackingCode string, dgiiResponse interface{}) error {
+	// Serialize dgiiResponse to JSON
+	var dgiiResponseJSON []byte
+	var err error
+	if dgiiResponse != nil {
+		dgiiResponseJSON, err = json.Marshal(dgiiResponse)
+		if err != nil {
+			return fmt.Errorf("failed to marshal dgii response: %w", err)
+		}
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE %s.invoices
+		SET dgii_status = $1, dgii_response = $2, sent_at = $3, updated_at = $4
+		WHERE id = $5
+	`, schema)
+
+	sentAt := time.Now()
+	_, err = r.db.ExecContext(ctx, query, status, dgiiResponseJSON, sentAt, time.Now(), invoiceID)
+	return err
+}
+
+// UpdateSignedAt updates the signed_at timestamp for an invoice
+func (r *Repository) UpdateSignedAt(ctx context.Context, schema string, invoiceID uuid.UUID, signedAt time.Time) error {
+	query := fmt.Sprintf(`
+		UPDATE %s.invoices
+		SET signed_at = $1, updated_at = $2
+		WHERE id = $3
+	`, schema)
+
+	_, err := r.db.ExecContext(ctx, query, signedAt, time.Now(), invoiceID)
+	return err
 }

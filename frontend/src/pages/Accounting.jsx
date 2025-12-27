@@ -16,6 +16,7 @@ export default function Accounting() {
   // Journal entries state
   const [entries, setEntries] = useState([])
   const [showEntryModal, setShowEntryModal] = useState(false)
+  const [expandedEntryId, setExpandedEntryId] = useState(null)
 
   // Reports state
   const [trialBalance, setTrialBalance] = useState([])
@@ -148,6 +149,21 @@ export default function Accounting() {
       return acc
     }, { debit: 0, credit: 0 })
     return totals
+  }
+
+  const calculateEntryTotals = (entry) => {
+    if (!entry.lines || entry.lines.length === 0) {
+      return { debit: 0, credit: 0 }
+    }
+    return entry.lines.reduce((acc, line) => {
+      acc.debit += line.debit || 0
+      acc.credit += line.credit || 0
+      return acc
+    }, { debit: 0, credit: 0 })
+  }
+
+  const toggleEntryExpansion = (entryId) => {
+    setExpandedEntryId(expandedEntryId === entryId ? null : entryId)
   }
 
   return (
@@ -286,51 +302,117 @@ export default function Accounting() {
                 </button>
               </div>
 
-              <div className="space-y-4">
-                {entries.map((entry) => (
-                  <div key={entry.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{entry.entry_number}</h3>
-                        <p className="text-sm text-gray-600">{new Date(entry.entry_date).toLocaleDateString('es-DO')}</p>
-                        <p className="text-sm text-gray-700 mt-1">{entry.description}</p>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        entry.status === 'posted' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {entry.status === 'posted' ? 'Contabilizado' : 'Borrador'}
-                      </span>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Cuenta</th>
-                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Débito</th>
-                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Crédito</th>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-12"></th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Número</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Referencia</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Débito</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Crédito</th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {entries.map((entry) => {
+                      const totals = calculateEntryTotals(entry)
+                      const isExpanded = expandedEntryId === entry.id
+                      return (
+                        <>
+                          <tr 
+                            key={entry.id} 
+                            className="hover:bg-gray-50 cursor-pointer"
+                            onClick={() => toggleEntryExpansion(entry.id)}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {isExpanded ? '▼' : '▶'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {entry.entry_number}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {new Date(entry.entry_date).toLocaleDateString('es-DO')}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-900">
+                              {entry.description}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {entry.reference || '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              DOP ${totals.debit.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              DOP ${totals.credit.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                entry.status === 'posted' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {entry.status === 'posted' ? 'Contabilizado' : 'Borrador'}
+                              </span>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {entry.lines?.map((line, idx) => (
-                            <tr key={idx}>
-                              <td className="px-3 py-2">
-                                <div className="font-medium text-gray-900">{line.account_code}</div>
-                                <div className="text-gray-600">{line.account_name}</div>
-                              </td>
-                              <td className="px-3 py-2 text-right text-gray-900">
-                                {line.debit > 0 ? `DOP $${line.debit.toLocaleString('es-DO', { minimumFractionDigits: 2 })}` : '-'}
-                              </td>
-                              <td className="px-3 py-2 text-right text-gray-900">
-                                {line.credit > 0 ? `DOP $${line.credit.toLocaleString('es-DO', { minimumFractionDigits: 2 })}` : '-'}
+                          {isExpanded && entry.lines && entry.lines.length > 0 && (
+                            <tr>
+                              <td colSpan="8" className="px-6 py-4 bg-gray-50">
+                                <div className="ml-8">
+                                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Líneas del Asiento</h4>
+                                  <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200 bg-white rounded-lg shadow-sm">
+                                      <thead className="bg-gray-100">
+                                        <tr>
+                                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Código</th>
+                                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Cuenta</th>
+                                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Descripción</th>
+                                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-600 uppercase">Débito</th>
+                                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-600 uppercase">Crédito</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-200">
+                                        {entry.lines.map((line, idx) => (
+                                          <tr key={idx} className="hover:bg-gray-50">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                                              {line.account_code}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-gray-900">
+                                              {line.account_name}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-gray-500">
+                                              {line.description || '-'}
+                                            </td>
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">
+                                              {line.debit > 0 ? `DOP $${line.debit.toLocaleString('es-DO', { minimumFractionDigits: 2 })}` : '-'}
+                                            </td>
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">
+                                              {line.credit > 0 ? `DOP $${line.credit.toLocaleString('es-DO', { minimumFractionDigits: 2 })}` : '-'}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                        <tr className="bg-gray-100 font-semibold">
+                                          <td colSpan="3" className="px-4 py-2 text-sm text-gray-900">TOTALES</td>
+                                          <td className="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">
+                                            DOP ${totals.debit.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                                          </td>
+                                          <td className="px-4 py-2 whitespace-nowrap text-sm text-right text-gray-900">
+                                            DOP ${totals.credit.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                                          </td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
                               </td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))}
+                          )}
+                        </>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               {entries.length === 0 && (

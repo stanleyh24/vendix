@@ -9,6 +9,7 @@ import (
 	"vendix/internal/config"
 	"vendix/internal/database"
 	"vendix/internal/logger"
+	"vendix/internal/storage"
 
 	"github.com/google/uuid"
 )
@@ -177,6 +178,13 @@ func (s *Service) InitializeSchema(ctx context.Context, id string) error {
 		// This allows tenants to continue functioning even if cash registers feature has issues
 	}
 
+	// Create MinIO bucket for tenant
+	if err := s.createTenantBucket(ctx, tenant.SchemaName); err != nil {
+		logger.Error("Failed to create tenant bucket", "error", err, "schema", tenant.SchemaName)
+		// Don't fail initialization if bucket creation fails
+		// This allows tenants to continue functioning even if storage is unavailable
+	}
+
 	logger.Info("Tenant schema initialized successfully", "schema", tenant.SchemaName)
 
 	return nil
@@ -243,5 +251,39 @@ func (s *Service) createDefaultCashRegister(ctx context.Context, schema string) 
 	}
 
 	logger.Info("Default cash register created", "schema", schema, "register_id", registerID, "name", registerName)
+	return nil
+}
+
+// createTenantBucket creates a MinIO bucket for the tenant
+func (s *Service) createTenantBucket(ctx context.Context, schema string) error {
+	// Generate bucket name from tenant schema
+	bucketName := storage.BuildTenantBucketName(schema)
+
+	// Create storage client with the tenant's bucket
+	storageClient, err := storage.NewClientWithBucket(s.cfg, bucketName)
+	if err != nil {
+		return fmt.Errorf("failed to create storage client for tenant bucket: %w", err)
+	}
+
+	// The bucket is automatically created in NewClientWithBucket if it doesn't exist
+	// But we can verify it exists
+	exists, err := storageClient.FileExists(ctx, ".bucket-check")
+	if err != nil {
+		// If we can't check, assume bucket creation succeeded (it was created in NewClientWithBucket)
+		logger.Info("Tenant bucket created", "schema", schema, "bucket", bucketName)
+		return nil
+	}
+
+	// Create a marker file to verify bucket is writable
+	if !exists {
+		// Try to upload a small test file to verify bucket is writable
+		testData := []byte("tenant-bucket-initialized")
+		if err := storageClient.UploadBytes(ctx, testData, ".bucket-check", "text/plain"); err != nil {
+			logger.Warn("Failed to create bucket marker file", "error", err, "bucket", bucketName)
+			// Don't fail - bucket exists, just couldn't write marker
+		}
+	}
+
+	logger.Info("Tenant bucket created and verified", "schema", schema, "bucket", bucketName)
 	return nil
 }

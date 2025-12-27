@@ -34,12 +34,26 @@ func (m *MockAdapter) SignDocument(ctx context.Context, document *ElectronicDocu
 	// Simulate signing delay
 	time.Sleep(100 * time.Millisecond)
 
+	// Generate a more realistic XML structure (simplified eCF format)
+	signedXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<eCF>
+	<Encabezado>
+		<IDVersion>1.0</IDVersion>
+		<eNCF>%s</eNCF>
+		<TipoCF>%s</TipoCF>
+		<FechaEmision>%s</FechaEmision>
+	</Encabezado>
+	<DGII>
+		<TrackingCode>PENDING</TrackingCode>
+	</DGII>
+</eCF>`, document.NCF, document.DocumentType, document.IssueDate)
+
 	signed := &SignedDocument{
 		OriginalDocument: document,
 		Signature:        fmt.Sprintf("MOCK_SIGNATURE_%s", uuid.New().String()),
 		Certificate:      "MOCK_CERTIFICATE",
 		SignedAt:         time.Now().Format(time.RFC3339),
-		SignedXML:        fmt.Sprintf("<SignedDocument>Mock XML for %s</SignedDocument>", document.NCF),
+		SignedXML:        signedXML,
 	}
 
 	logger.Info("Mock: Document signed successfully", "ncf", document.NCF)

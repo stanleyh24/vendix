@@ -1,30 +1,72 @@
 package invoices
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
 
 	"vendix/internal/config"
 	"vendix/internal/database"
+	"vendix/internal/dgii"
 	"vendix/internal/logger"
+	"vendix/internal/modules/ncf"
 	"vendix/internal/modules/products"
+	"vendix/internal/modules/tenantconfig"
+	"vendix/internal/storage"
 
 	"github.com/google/uuid"
+	"github.com/jung-kurt/gofpdf"
 )
 
 type Service struct {
 	repo         *Repository
 	productsRepo *products.Repository
+	storage      *storage.Client
+	dgiiService  *dgii.Service
+	ncfService   *ncf.Service
+	configRepo   *tenantconfig.Repository
 	cfg          *config.Config
 }
 
-func NewService(db *database.DB, cfg *config.Config) *Service {
+func NewService(db *database.DB, cfg *config.Config) (*Service, error) {
+	// Storage client will be initialized per-tenant when needed
+	// We'll create it with the default bucket for now, but it will be switched per tenant
+	storageClient, err := storage.NewClient(cfg)
+	if err != nil {
+		logger.Error("Failed to initialize storage client", "error", err)
+		// Return service without storage if it fails - allows graceful degradation
+		// In production, you might want to fail here
+	}
+
 	return &Service{
 		repo:         NewRepository(db),
 		productsRepo: products.NewRepository(db),
+		storage:      storageClient,
+		dgiiService:  dgii.NewService(cfg),
+		ncfService:   ncf.NewService(db),
+		configRepo:   tenantconfig.NewRepository(db),
 		cfg:          cfg,
+	}, nil
+}
+
+// getStorageClientForTenant returns a storage client configured for the tenant's bucket
+func (s *Service) getStorageClientForTenant(ctx context.Context, schema string) (*storage.Client, error) {
+	// Build bucket name for tenant
+	bucketName := storage.BuildTenantBucketName(schema)
+	
+	// Create or get client with tenant bucket
+	// If we already have a client, we can switch its bucket
+	if s.storage != nil {
+		// Create a new client with the tenant's bucket
+		tenantClient, err := storage.NewClientWithBucket(s.cfg, bucketName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create storage client for tenant: %w", err)
+		}
+		return tenantClient, nil
 	}
+	
+	return nil, fmt.Errorf("storage client not initialized")
 }
 
 func (s *Service) Create(ctx context.Context, schema string, req *CreateInvoiceRequest) (*Invoice, error) {
@@ -131,6 +173,26 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateInvoiceR
 	invoice.TaxAmount = taxAmount
 	invoice.Total = subtotal + taxAmount
 
+	// Generate NCF if enabled (NCF is auto-generated, not provided in request)
+	if true {
+		// Determine NCF type based on customer
+		ncfTypeStr := ncfType
+		ncfTypeEnum, err := ncf.GetNCFTypeFromString(ncfTypeStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid NCF type: %w", err)
+		}
+
+		// Generate NCF
+		ncfInfo, err := s.ncfService.GenerateNCF(ctx, schema, ncfTypeEnum)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate NCF: %w", err)
+		}
+
+		ncfStr := ncfInfo.FullNCF
+		invoice.NCF = &ncfStr
+		logger.Info("NCF generated for invoice", "ncf", ncfStr, "type", ncfTypeStr)
+	}
+
 	// Crear la factura
 	if err := s.repo.Create(ctx, schema, invoice); err != nil {
 		logger.Error("Failed to create invoice", "error", err)
@@ -177,7 +239,165 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateInvoiceR
 	}
 
 	logger.Info("Invoice created", "number", invoice.InvoiceNumber)
+
+	// Generate and save PDF to storage
+	if s.storage != nil {
+		if err := s.generateAndSavePDF(ctx, schema, invoice); err != nil {
+			logger.Error("Failed to generate and save PDF", "error", err, "invoice_id", invoice.ID)
+			// Don't fail invoice creation if PDF generation fails
+		}
+	} else {
+		logger.Warn("Storage client not available, PDF will not be generated", "invoice_id", invoice.ID)
+	}
+
 	return invoice, nil
+}
+
+// generateAndSavePDF generates a PDF for the invoice and saves it to storage
+func (s *Service) generateAndSavePDF(ctx context.Context, schema string, invoice *Invoice) error {
+	// Get storage client for tenant bucket
+	storageClient, err := s.getStorageClientForTenant(ctx, schema)
+	if err != nil {
+		return fmt.Errorf("failed to get storage client: %w", err)
+	}
+	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf.SetMargins(15, 15, 15)
+	pdf.AddPage()
+
+	pdf.SetFont("Arial", "B", 16)
+	pdf.Cell(0, 10, "Factura "+invoice.InvoiceNumber)
+	pdf.Ln(8)
+
+	pdf.SetFont("Arial", "", 12)
+	pdf.Cell(0, 8, fmt.Sprintf("Cliente: %s", invoice.CustomerName))
+	pdf.Ln(6)
+	pdf.Cell(0, 8, fmt.Sprintf("Fecha: %s", invoice.IssueDate.Format("2006-01-02")))
+	pdf.Ln(6)
+	pdf.Cell(0, 8, fmt.Sprintf("Vence: %s", invoice.DueDate.Format("2006-01-02")))
+	pdf.Ln(10)
+
+	// Table header
+	pdf.SetFont("Arial", "B", 12)
+	pdf.CellFormat(100, 8, "Descripción", "B", 0, "L", false, 0, "")
+	pdf.CellFormat(20, 8, "Cant.", "B", 0, "R", false, 0, "")
+	pdf.CellFormat(30, 8, "P. Unit.", "B", 0, "R", false, 0, "")
+	pdf.CellFormat(30, 8, "Total", "B", 1, "R", false, 0, "")
+
+	pdf.SetFont("Arial", "", 12)
+	for _, line := range invoice.Lines {
+		pdf.CellFormat(100, 7, line.Description, "", 0, "L", false, 0, "")
+		pdf.CellFormat(20, 7, fmt.Sprintf("%.2f", line.Quantity), "", 0, "R", false, 0, "")
+		pdf.CellFormat(30, 7, fmt.Sprintf("%.2f", line.UnitPrice), "", 0, "R", false, 0, "")
+		pdf.CellFormat(30, 7, fmt.Sprintf("%.2f", line.LineTotal), "", 1, "R", false, 0, "")
+	}
+
+	pdf.Ln(4)
+	pdf.Cell(0, 0, "")
+	pdf.Ln(2)
+	pdf.CellFormat(150, 7, "Subtotal:", "", 0, "R", false, 0, "")
+	pdf.CellFormat(30, 7, fmt.Sprintf("%.2f", invoice.Subtotal), "", 1, "R", false, 0, "")
+	pdf.CellFormat(150, 7, "ITBIS:", "", 0, "R", false, 0, "")
+	pdf.CellFormat(30, 7, fmt.Sprintf("%.2f", invoice.TaxAmount), "", 1, "R", false, 0, "")
+	pdf.SetFont("Arial", "B", 12)
+	pdf.CellFormat(150, 8, "TOTAL:", "", 0, "R", false, 0, "")
+	pdf.CellFormat(30, 8, fmt.Sprintf("%.2f", invoice.Total), "", 1, "R", false, 0, "")
+
+	var buf bytes.Buffer
+	if err := pdf.Output(&buf); err != nil {
+		return fmt.Errorf("failed to generate PDF: %w", err)
+	}
+
+	// Build object key
+	objectKey := storage.BuildInvoicePDFKey(schema, invoice.ID.String(), invoice.InvoiceNumber)
+
+	// Upload to storage
+	if err := storageClient.UploadBytes(ctx, buf.Bytes(), objectKey, "application/pdf"); err != nil {
+		return fmt.Errorf("failed to upload PDF: %w", err)
+	}
+
+	// Generate presigned URL (valid for 7 days)
+	pdfURL, err := storageClient.PresignedURL(ctx, objectKey, 7*24*time.Hour)
+	if err != nil {
+		logger.Error("Failed to generate presigned URL", "error", err)
+		// Still update with object key even if presigned URL fails
+		pdfURL = fmt.Sprintf("s3://%s/%s", s.cfg.S3Bucket, objectKey)
+	}
+
+	// Update invoice with PDF URL
+	if err := s.repo.UpdateDocumentURLs(ctx, schema, invoice.ID, &pdfURL, nil); err != nil {
+		logger.Error("Failed to update PDF URL", "error", err)
+		return fmt.Errorf("failed to update PDF URL: %w", err)
+	}
+
+	logger.Info("PDF generated and saved", "invoice_id", invoice.ID, "object_key", objectKey)
+	return nil
+}
+
+// GetPDFBytes retrieves the PDF bytes for an invoice
+func (s *Service) GetPDFBytes(ctx context.Context, schema string, invoiceID uuid.UUID) ([]byte, error) {
+	invoice, err := s.repo.GetByID(ctx, schema, invoiceID)
+	if err != nil {
+		return nil, fmt.Errorf("invoice not found: %w", err)
+	}
+
+	if invoice.PDFURL == nil || *invoice.PDFURL == "" {
+		// PDF doesn't exist, generate it
+		if err := s.generateAndSavePDF(ctx, schema, invoice); err != nil {
+			return nil, fmt.Errorf("failed to generate PDF: %w", err)
+		}
+		// Reload invoice to get the updated PDF URL
+		invoice, err = s.repo.GetByID(ctx, schema, invoiceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reload invoice: %w", err)
+		}
+	}
+
+	// Get storage client for tenant bucket
+	storageClient, err := s.getStorageClientForTenant(ctx, schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get storage client: %w", err)
+	}
+
+	// Extract object key from URL (if it's a presigned URL, we need to extract the key)
+	objectKey := storage.BuildInvoicePDFKey(schema, invoiceID.String(), invoice.InvoiceNumber)
+
+	// Download from storage
+	pdfBytes, err := storageClient.DownloadFile(ctx, objectKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download PDF: %w", err)
+	}
+
+	return pdfBytes, nil
+}
+
+// GetXMLBytes retrieves the XML bytes for an invoice
+func (s *Service) GetXMLBytes(ctx context.Context, schema string, invoiceID uuid.UUID) ([]byte, error) {
+	invoice, err := s.repo.GetByID(ctx, schema, invoiceID)
+	if err != nil {
+		return nil, fmt.Errorf("invoice not found: %w", err)
+	}
+
+	if invoice.XMLURL == nil || *invoice.XMLURL == "" {
+		// XML doesn't exist - invoice hasn't been sent to DGII yet
+		return nil, fmt.Errorf("XML not available: invoice has not been sent to DGII")
+	}
+
+	// Get storage client for tenant bucket
+	storageClient, err := s.getStorageClientForTenant(ctx, schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get storage client: %w", err)
+	}
+
+	// Extract object key from URL (if it's a presigned URL, we need to extract the key)
+	objectKey := storage.BuildInvoiceXMLKey(schema, invoiceID.String(), invoice.InvoiceNumber)
+
+	// Download from storage
+	xmlBytes, err := storageClient.DownloadFile(ctx, objectKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download XML: %w", err)
+	}
+
+	return xmlBytes, nil
 }
 
 func (s *Service) GetByID(ctx context.Context, schema string, id string) (*Invoice, error) {
@@ -246,12 +466,261 @@ func (s *Service) SendInvoice(ctx context.Context, schema string, id string) err
 		return fmt.Errorf("invalid invoice ID: %w", err)
 	}
 
+	// Get invoice
+	invoice, err := s.repo.GetByID(ctx, schema, invoiceID)
+	if err != nil {
+		return fmt.Errorf("invoice not found: %w", err)
+	}
+
+	// Validate invoice has NCF
+	if invoice.NCF == nil || *invoice.NCF == "" {
+		return fmt.Errorf("invoice must have an NCF before sending to DGII")
+	}
+
+	// Convert invoice to ElectronicDocument for DGII
+	document := s.invoiceToElectronicDocument(ctx, schema, invoice)
+
+	// Process invoice with DGII (sign and send) - get both response and signed document
+	processResult, err := s.dgiiService.ProcessInvoiceWithSignedDoc(ctx, document)
+	if err != nil {
+		logger.Error("Failed to process invoice with DGII", "error", err, "invoice_id", id)
+		return fmt.Errorf("failed to send invoice to DGII: %w", err)
+	}
+
+	dgiiResponse := processResult.Response
+	signedDoc := processResult.SignedDoc
+
+	// Use the signed XML from the adapter if available, otherwise generate our own
+	var xmlData []byte
+	if signedDoc != nil && signedDoc.SignedXML != "" {
+		xmlData = []byte(signedDoc.SignedXML)
+	} else {
+		// Fallback: generate XML representation
+		// Note: In production, the XML should be generated according to DGII's eCF specification
+		xmlData = s.generateInvoiceXML(invoice, dgiiResponse)
+	}
+
+	// Save XML to storage
+	if s.storage != nil && xmlData != nil {
+		if err := s.saveInvoiceXML(ctx, schema, invoice, xmlData); err != nil {
+			logger.Error("Failed to save XML to storage", "error", err, "invoice_id", id)
+			// Don't fail the send operation if storage fails
+		}
+	} else if xmlData != nil {
+		logger.Warn("Storage client not available, XML will not be saved", "invoice_id", id)
+	}
+
+	// Update signed_at timestamp if we have signed document
+	if signedDoc != nil && signedDoc.SignedAt != "" {
+		// Parse signed_at from the signed document
+		if signedAt, err := time.Parse(time.RFC3339, signedDoc.SignedAt); err == nil {
+			if err := s.repo.UpdateSignedAt(ctx, schema, invoiceID, signedAt); err != nil {
+				logger.Error("Failed to update signed_at", "error", err)
+			}
+		}
+	}
+
+	// Update invoice status and DGII information
+	if err := s.repo.UpdateDGIIStatus(ctx, schema, invoiceID, "sent", dgiiResponse.TrackingCode, dgiiResponse); err != nil {
+		logger.Error("Failed to update invoice DGII status", "error", err)
+		return fmt.Errorf("failed to update invoice status: %w", err)
+	}
+
 	// Update status to sent
 	if err := s.repo.UpdateStatus(ctx, schema, invoiceID, "sent"); err != nil {
 		return fmt.Errorf("failed to update invoice status: %w", err)
 	}
 
-	logger.Info("Invoice sent", "id", id)
+	logger.Info("Invoice sent to DGII", "id", id, "tracking_code", dgiiResponse.TrackingCode)
+	return nil
+}
+
+// invoiceToElectronicDocument converts an Invoice to an ElectronicDocument for DGII
+func (s *Service) invoiceToElectronicDocument(ctx context.Context, schema string, invoice *Invoice) *dgii.ElectronicDocument {
+	// Convert invoice lines to document items
+	items := make([]*dgii.DocumentItem, len(invoice.Lines))
+	for i, line := range invoice.Lines {
+		items[i] = &dgii.DocumentItem{
+			LineNumber:  line.LineNumber,
+			Description: line.Description,
+			Quantity:    line.Quantity,
+			UnitPrice:   line.UnitPrice,
+			TaxRate:     line.TaxRate,
+			TaxAmount:   line.TaxAmount,
+			Total:       line.LineTotal,
+		}
+	}
+
+	// Get tenant config for sender information
+	config, err := s.configRepo.Get(ctx, schema)
+	sender := &dgii.PartyInfo{
+		TaxID:   "00000000000", // Default
+		Name:    "Empresa",
+		Address: "",
+		City:    "",
+		Country: "DO",
+	}
+	if err == nil && config != nil {
+		if config.DGIIIRNC != nil && *config.DGIIIRNC != "" {
+			sender.TaxID = *config.DGIIIRNC
+		}
+		if config.CompanyLegalName != "" {
+			sender.Name = config.CompanyLegalName
+		} else if config.CompanyTradeName != nil && *config.CompanyTradeName != "" {
+			sender.Name = *config.CompanyTradeName
+		}
+		if config.AddressLine1 != nil && *config.AddressLine1 != "" {
+			sender.Address = *config.AddressLine1
+			if config.AddressLine2 != nil && *config.AddressLine2 != "" {
+				sender.Address += ", " + *config.AddressLine2
+			}
+		}
+		if config.City != nil && *config.City != "" {
+			sender.City = *config.City
+		}
+		if config.Country != "" {
+			sender.Country = config.Country
+		}
+	}
+
+	// Receiver info from customer
+	receiver := &dgii.PartyInfo{
+		TaxID:   "00000000000", // Will be filled from customer if available
+		Name:    invoice.CustomerName,
+		Country: "DO",
+	}
+
+	document := &dgii.ElectronicDocument{
+		DocumentType: "Invoice",
+		NCF:          *invoice.NCF,
+		IssueDate:    invoice.IssueDate.Format("2006-01-02"),
+		Sender:       sender,
+		Receiver:     receiver,
+		Items:        items,
+		Totals: &dgii.DocumentTotals{
+			Subtotal:  invoice.Subtotal,
+			TaxAmount: invoice.TaxAmount,
+			Total:     invoice.Total,
+			Currency:  invoice.Currency,
+		},
+		Metadata: map[string]interface{}{
+			"invoice_id":      invoice.ID.String(),
+			"invoice_number":  invoice.InvoiceNumber,
+			"ncf_type":        invoice.NCFType,
+			"payment_type":    "cash", // Default, should be inferred from payments
+		},
+	}
+
+	return document
+}
+
+// generateInvoiceXML generates an XML representation of the invoice
+// This is a simplified version following DGII eCF format
+// In production, this should strictly follow DGII's XML schema specification (XSD)
+func (s *Service) generateInvoiceXML(invoice *Invoice, dgiiResponse *dgii.DGIIResponse) []byte {
+	// Format date as DD-MM-YYYY (DGII format)
+	issueDate := invoice.IssueDate.Format("02-01-2006")
+	dueDate := invoice.DueDate.Format("02-01-2006")
+
+	xml := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<eCF>
+	<Encabezado>
+		<IDVersion>1.0</IDVersion>
+		<eNCF>%s</eNCF>
+		<TipoCF>%s</TipoCF>
+		<FechaEmision>%s</FechaEmision>
+		<FechaVencimiento>%s</FechaVencimiento>
+		<Emisor>
+			<RNCEmisor>13100000000</RNCEmisor>
+			<RazonSocialEmisor>Demo Company</RazonSocialEmisor>
+		</Emisor>
+		<Comprador>
+			<RNCComprador>00000000000</RNCComprador>
+			<RazonSocialComprador>%s</RazonSocialComprador>
+		</Comprador>
+	</Encabezado>
+	<Detalle>
+%s	</Detalle>
+	<Total>
+		<SubTotal>%.2f</SubTotal>
+		<ITBIS>%.2f</ITBIS>
+		<Total>%.2f</Total>
+		<Moneda>%s</Moneda>
+	</Total>
+	<DGII>
+		<TrackingCode>%s</TrackingCode>
+		<Status>%s</Status>
+		<ReceivedAt>%s</ReceivedAt>
+	</DGII>
+</eCF>`,
+		*invoice.NCF,
+		invoice.NCFType,
+		issueDate,
+		dueDate,
+		invoice.CustomerName,
+		s.generateInvoiceLinesXML(invoice.Lines),
+		invoice.Subtotal,
+		invoice.TaxAmount,
+		invoice.Total,
+		invoice.Currency,
+		dgiiResponse.TrackingCode,
+		"sent",
+		dgiiResponse.ReceivedAt,
+	)
+
+	return []byte(xml)
+}
+
+// generateInvoiceLinesXML generates XML for invoice lines
+func (s *Service) generateInvoiceLinesXML(lines []InvoiceLine) string {
+	var xmlLines string
+	for _, line := range lines {
+		xmlLines += fmt.Sprintf(`		<Linea>
+			<NumeroLinea>%d</NumeroLinea>
+			<Descripcion>%s</Descripcion>
+			<Cantidad>%.2f</Cantidad>
+			<PrecioUnitario>%.2f</PrecioUnitario>
+			<TasaITBIS>%.2f</TasaITBIS>
+			<ITBISLinea>%.2f</ITBISLinea>
+			<MontoLinea>%.2f</MontoLinea>
+		</Linea>
+`, line.LineNumber, line.Description, line.Quantity, line.UnitPrice, line.TaxRate, line.TaxAmount, line.LineTotal)
+	}
+	return xmlLines
+}
+
+// saveInvoiceXML saves the invoice XML to storage
+func (s *Service) saveInvoiceXML(ctx context.Context, schema string, invoice *Invoice, xmlData []byte) error {
+	// Get storage client for tenant bucket
+	storageClient, err := s.getStorageClientForTenant(ctx, schema)
+	if err != nil {
+		return fmt.Errorf("failed to get storage client: %w", err)
+	}
+
+	// Build object key
+	objectKey := storage.BuildInvoiceXMLKey(schema, invoice.ID.String(), invoice.InvoiceNumber)
+
+	// Upload to storage
+	if err := storageClient.UploadBytes(ctx, xmlData, objectKey, "application/xml"); err != nil {
+		return fmt.Errorf("failed to upload XML: %w", err)
+	}
+
+	// Generate presigned URL (valid for 7 days)
+	xmlURL, err := storageClient.PresignedURL(ctx, objectKey, 7*24*time.Hour)
+	if err != nil {
+		logger.Error("Failed to generate presigned URL for XML", "error", err)
+		// Still update with object key even if presigned URL fails
+		xmlURL = fmt.Sprintf("s3://%s/%s", s.cfg.S3Bucket, objectKey)
+	}
+
+	// Update invoice with XML URL (preserve existing PDF URL)
+	pdfURL := invoice.PDFURL
+	if err := s.repo.UpdateDocumentURLs(ctx, schema, invoice.ID, pdfURL, &xmlURL); err != nil {
+		logger.Error("Failed to update XML URL", "error", err)
+		return fmt.Errorf("failed to update XML URL: %w", err)
+	}
+
+	logger.Info("XML saved to storage", "invoice_id", invoice.ID, "object_key", objectKey)
 	return nil
 }
 

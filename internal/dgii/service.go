@@ -34,6 +34,12 @@ func NewService(cfg *config.Config) *Service {
 	}
 }
 
+// ProcessInvoiceResponse includes both the DGII response and the signed document
+type ProcessInvoiceResponse struct {
+	Response     *DGIIResponse
+	SignedDoc    *SignedDocument
+}
+
 // ProcessInvoice signs and sends an invoice to DGII
 func (s *Service) ProcessInvoice(ctx context.Context, document *ElectronicDocument) (*DGIIResponse, error) {
 	// Sign document
@@ -49,6 +55,26 @@ func (s *Service) ProcessInvoice(ctx context.Context, document *ElectronicDocume
 	}
 
 	return response, nil
+}
+
+// ProcessInvoiceWithSignedDoc signs and sends an invoice to DGII, returning both response and signed document
+func (s *Service) ProcessInvoiceWithSignedDoc(ctx context.Context, document *ElectronicDocument) (*ProcessInvoiceResponse, error) {
+	// Sign document
+	signed, err := s.adapter.SignDocument(ctx, document)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign document: %w", err)
+	}
+
+	// Send to DGII
+	response, err := s.adapter.SendDocument(ctx, signed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send document to DGII: %w", err)
+	}
+
+	return &ProcessInvoiceResponse{
+		Response:  response,
+		SignedDoc: signed,
+	}, nil
 }
 
 // CancelInvoice cancels an invoice in DGII

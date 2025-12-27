@@ -26,6 +26,8 @@ type Invoice struct {
 	DGIIStatus    *string    `db:"dgii_status" json:"dgii_status,omitempty"`
 	SignedAt      *time.Time `db:"signed_at" json:"signed_at,omitempty"`
 	SentAt        *time.Time `db:"sent_at" json:"sent_at,omitempty"`
+	PDFURL        *string    `db:"pdf_url" json:"pdf_url,omitempty"`       // URL del PDF almacenado en S3/MinIO
+	XMLURL        *string    `db:"xml_url" json:"xml_url,omitempty"`       // URL del XML almacenado en S3/MinIO
 	CreatedBy     *uuid.UUID `db:"created_by" json:"created_by,omitempty"`
 	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`

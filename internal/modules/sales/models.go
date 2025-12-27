@@ -46,6 +46,7 @@ type SaleLine struct {
 type CreateSaleRequest struct {
 	CustomerID  *uuid.UUID          `json:"customer_id,omitempty"`            // Opcional - si no se envía, usa cliente genérico
 	PaymentType string              `json:"payment_type" validate:"required"` // cash, card, transfer, etc.
+	NCFType     string              `json:"ncf_type,omitempty"`               // 01=Crédito Fiscal, 02=Consumidor Final (default: 02)
 	Notes       *string             `json:"notes,omitempty"`
 	Lines       []CreateSaleLineReq `json:"lines" validate:"required,min=1"`
 }

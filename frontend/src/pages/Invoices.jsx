@@ -108,7 +108,8 @@ export default function Invoices() {
     try {
       // Usa el cliente axios ya configurado con Authorization y X-Tenant-ID
       const response = await api.get(`/invoices/${invoice.id}/pdf`, { responseType: 'blob' });
-      const blob = new Blob([response.data], { type: 'application/pdf' });
+      // response.data is already a Blob when responseType is 'blob'
+      const blob = response.data;
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `invoice-${invoice.invoice_number}.pdf`;
@@ -405,7 +406,7 @@ export default function Invoices() {
               <tr>
                 <td className="px-6 py-3 text-sm font-medium text-gray-700" colSpan={7}>Total listado</td>
                 <td className="px-6 py-3 text-sm font-bold text-right text-[#FF6B00]">{totals.total.toFixed(2)}</td>
-                <td className="px-6 py-3" />
+                <td className="px-6 py-3"></td>
               </tr>
             </tfoot>
           </table>
