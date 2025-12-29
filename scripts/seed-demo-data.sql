@@ -691,19 +691,19 @@ BEGIN
   -- GASTOS (PAYMENTS)
   -- ====================
 
-  INSERT INTO payments (id, payment_number, customer_id, payment_method, payment_date, amount, currency, reference, notes, status, created_at, updated_at)
+  INSERT INTO payments (id, payment_number, customer_id, payment_method, payment_date, amount, currency, reference, notes, status, category, supplier, description, created_at, updated_at)
   VALUES
     -- Gastos de octubre (usando cliente "Gastos Generales")
-    (gen_random_uuid(), 'EXP-00000001', gastos_id, 'cash', CURRENT_DATE - INTERVAL '25 days', 8900.00, 'DOP', 'EDESUR-OCT2025', 'Factura de electricidad - Octubre', 'completed', NOW() - INTERVAL '25 days', NOW() - INTERVAL '25 days'),
-    (gen_random_uuid(), 'EXP-00000002', gastos_id, 'transfer', CURRENT_DATE - INTERVAL '20 days', 5500.00, 'DOP', 'INV-PAP-001', 'Papelería y útiles de oficina', 'completed', NOW() - INTERVAL '20 days', NOW() - INTERVAL '20 days'),
-    (gen_random_uuid(), 'EXP-00000003', gastos_id, 'card', CURRENT_DATE - INTERVAL '18 days', 15000.00, 'DOP', 'META-ADS-789', 'Campaña en redes sociales - Facebook e Instagram', 'completed', NOW() - INTERVAL '18 days', NOW() - INTERVAL '18 days'),
-    (gen_random_uuid(), 'EXP-00000004', gastos_id, 'transfer', CURRENT_DATE - INTERVAL '15 days', 35000.00, 'DOP', 'ALQ-OCT-2025', 'Alquiler de oficina - Octubre 2025', 'completed', NOW() - INTERVAL '15 days', NOW() - INTERVAL '15 days'),
-    (gen_random_uuid(), 'EXP-00000005', gastos_id, 'cash', CURRENT_DATE - INTERVAL '12 days', 2800.00, 'DOP', 'GASOLINA-001', 'Combustible para vehículo de la empresa', 'completed', NOW() - INTERVAL '12 days', NOW() - INTERVAL '12 days'),
-    (gen_random_uuid(), 'EXP-00000006', gastos_id, 'transfer', CURRENT_DATE - INTERVAL '10 days', 4500.00, 'DOP', 'AGUA-OCT', 'Servicio de agua potable', 'completed', NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days'),
-    (gen_random_uuid(), 'EXP-00000007', gastos_id, 'card', CURRENT_DATE - INTERVAL '8 days', 12000.00, 'DOP', 'INTERNET-FIB', 'Internet fibra óptica empresarial', 'completed', NOW() - INTERVAL '8 days', NOW() - INTERVAL '8 days'),
-    (gen_random_uuid(), 'EXP-00000008', gastos_id, 'check', CURRENT_DATE - INTERVAL '5 days', 8500.00, 'DOP', 'LIMPIEZA-OCT', 'Servicio de limpieza mensual', 'completed', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
-    (gen_random_uuid(), 'EXP-00000009', gastos_id, 'transfer', CURRENT_DATE - INTERVAL '3 days', 3200.00, 'DOP', 'TELEFONIA', 'Servicios telefónicos empresariales', 'completed', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'),
-    (gen_random_uuid(), 'EXP-00000010', gastos_id, 'cash', CURRENT_DATE - INTERVAL '1 day', 1800.00, 'DOP', 'CAFE-SUP', 'Suministros de café y snacks para oficina', 'completed', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day');
+    (gen_random_uuid(), 'EXP-00000001', gastos_id, 'cash', CURRENT_DATE - INTERVAL '25 days', 8900.00, 'DOP', 'EDESUR-OCT2025', 'Factura de electricidad - Octubre', 'completed', 'utilities', 'EDESUR', 'Factura de electricidad - Octubre', NOW() - INTERVAL '25 days', NOW() - INTERVAL '25 days'),
+    (gen_random_uuid(), 'EXP-00000002', gastos_id, 'transfer', CURRENT_DATE - INTERVAL '20 days', 5500.00, 'DOP', 'INV-PAP-001', 'Papelería y útiles de oficina', 'completed', 'supplies', 'Suministros Oficina SRL', 'Papelería y útiles de oficina', NOW() - INTERVAL '20 days', NOW() - INTERVAL '20 days'),
+    (gen_random_uuid(), 'EXP-00000003', gastos_id, 'card', CURRENT_DATE - INTERVAL '18 days', 15000.00, 'DOP', 'META-ADS-789', 'Campaña en redes sociales - Facebook e Instagram', 'completed', 'marketing', 'Meta Platforms', 'Campaña en redes sociales - Facebook e Instagram', NOW() - INTERVAL '18 days', NOW() - INTERVAL '18 days'),
+    (gen_random_uuid(), 'EXP-00000004', gastos_id, 'transfer', CURRENT_DATE - INTERVAL '15 days', 35000.00, 'DOP', 'ALQ-OCT-2025', 'Alquiler de oficina - Octubre 2025', 'completed', 'rent', 'Inmobiliaria Central', 'Alquiler de oficina - Octubre 2025', NOW() - INTERVAL '15 days', NOW() - INTERVAL '15 days'),
+    (gen_random_uuid(), 'EXP-00000005', gastos_id, 'cash', CURRENT_DATE - INTERVAL '12 days', 2800.00, 'DOP', 'GASOLINA-001', 'Combustible para vehículo de la empresa', 'completed', 'other', 'Estación de Servicio', 'Combustible para vehículo de la empresa', NOW() - INTERVAL '12 days', NOW() - INTERVAL '12 days'),
+    (gen_random_uuid(), 'EXP-00000006', gastos_id, 'transfer', CURRENT_DATE - INTERVAL '10 days', 4500.00, 'DOP', 'AGUA-OCT', 'Servicio de agua potable', 'completed', 'utilities', 'CAASD', 'Servicio de agua potable', NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days'),
+    (gen_random_uuid(), 'EXP-00000007', gastos_id, 'card', CURRENT_DATE - INTERVAL '8 days', 12000.00, 'DOP', 'INTERNET-FIB', 'Internet fibra óptica empresarial', 'completed', 'utilities', 'Redes y Telecom SRL', 'Internet fibra óptica empresarial', NOW() - INTERVAL '8 days', NOW() - INTERVAL '8 days'),
+    (gen_random_uuid(), 'EXP-00000008', gastos_id, 'check', CURRENT_DATE - INTERVAL '5 days', 8500.00, 'DOP', 'LIMPIEZA-OCT', 'Servicio de limpieza mensual', 'completed', 'other', 'Servicios de Limpieza CleanPro', 'Servicio de limpieza mensual', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
+    (gen_random_uuid(), 'EXP-00000009', gastos_id, 'transfer', CURRENT_DATE - INTERVAL '3 days', 3200.00, 'DOP', 'TELEFONIA', 'Servicios telefónicos empresariales', 'completed', 'utilities', 'Redes y Telecom SRL', 'Servicios telefónicos empresariales', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'),
+    (gen_random_uuid(), 'EXP-00000010', gastos_id, 'cash', CURRENT_DATE - INTERVAL '1 day', 1800.00, 'DOP', 'CAFE-SUP', 'Suministros de café y snacks para oficina', 'completed', 'supplies', 'Suministros Oficina SRL', 'Suministros de café y snacks para oficina', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day');
 
 END $$;
 

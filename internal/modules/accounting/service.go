@@ -131,6 +131,44 @@ func (s *Service) UpdateAccount(ctx context.Context, schema string, code string,
 	return account, nil
 }
 
+func (s *Service) DeleteAccount(ctx context.Context, schema string, code string) error {
+	// Verificar que la cuenta existe
+	account, err := s.repo.GetAccountByCode(ctx, schema, code)
+	if err != nil {
+		return fmt.Errorf("account not found: %w", err)
+	}
+	
+	// Verificar si la cuenta tiene asientos contables
+	hasEntries, err := s.repo.AccountHasJournalEntries(ctx, schema, code)
+	if err != nil {
+		logger.Error("Failed to check journal entries", "error", err)
+		return fmt.Errorf("failed to check journal entries: %w", err)
+	}
+	
+	if hasEntries {
+		return fmt.Errorf("cannot delete account %s: account has journal entries. Only accounts without journal entries can be deleted", code)
+	}
+	
+	// Verificar si hay cuentas hijas (subcuentas)
+	childAccounts, err := s.repo.ListAccounts(ctx, schema, nil)
+	if err == nil {
+		for _, child := range childAccounts {
+			if child.ParentAccountCode != nil && *child.ParentAccountCode == code {
+				return fmt.Errorf("cannot delete account %s: account has child accounts. Please delete or reassign child accounts first", code)
+			}
+		}
+	}
+	
+	// Eliminar la cuenta
+	if err := s.repo.DeleteAccount(ctx, schema, code); err != nil {
+		logger.Error("Failed to delete account", "error", err, "code", code)
+		return fmt.Errorf("failed to delete account: %w", err)
+	}
+	
+	logger.Info("Account deleted", "code", code, "name", account.AccountName)
+	return nil
+}
+
 // Journal Entry methods
 
 func (s *Service) CreateJournalEntry(ctx context.Context, schema string, req *CreateJournalEntryRequest) (*JournalEntry, error) {
@@ -440,40 +478,50 @@ func (s *Service) GenerateDailySalesJournalEntry(ctx context.Context, schema str
 		Lines:       []JournalEntryLine{},
 	}
 
-	// Build journal entry lines
+	// Build journal entry lines usando cuentas configuradas
 	// DEBE (Debit):
-	// - Caja General (1111) - ventas en efectivo
-	// - Banco - Cuenta Corriente (1112) - ventas con tarjeta y transferencias
-	// - Clientes (1121) - ventas a crédito (CXC)
+	// - Caja General - ventas en efectivo
+	// - Banco - Cuenta Corriente - ventas con tarjeta y transferencias
+	// - Clientes - ventas a crédito (CXC)
 
 	// HABER (Credit):
-	// - Ventas (4110) - subtotal de todas las ventas
-	// - ITBIS por Pagar (2121) - total de impuestos
-	// - Descuentos en Ventas (4111) - si hay descuentos (por ahora 0)
+	// - Ventas - subtotal de todas las ventas
+	// - ITBIS por Pagar - total de impuestos
+	// - Descuentos en Ventas - si hay descuentos (por ahora 0)
 
-	// Verify accounts exist
-	accountsToCheck := []string{"1111", "1112", "1121", "4110", "2121"}
-	for _, code := range accountsToCheck {
-		_, err := s.repo.GetAccountByCode(ctx, schema, code)
-		if err != nil {
-			return nil, fmt.Errorf("account %s not found in chart of accounts", code)
-		}
+	// Obtener cuentas configuradas (con fallback a valores por defecto)
+	cashAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypeSalesCash, "1111", "Caja General")
+	if err != nil {
+		return nil, err
+	}
+	
+	bankAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypeSalesCard, "1112", "Banco - Cuenta Corriente")
+	if err != nil {
+		return nil, err
+	}
+	
+	arAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypeSalesCredit, "1121", "Clientes")
+	if err != nil {
+		return nil, err
+	}
+	
+	salesAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypeSalesRevenue, "4110", "Ventas")
+	if err != nil {
+		return nil, err
+	}
+	
+	taxAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypeTaxPayable, "2121", "ITBIS por Pagar")
+	if err != nil {
+		return nil, err
 	}
 
-	// Get account names
-	cashAccount, _ := s.repo.GetAccountByCode(ctx, schema, "1111")
-	bankAccount, _ := s.repo.GetAccountByCode(ctx, schema, "1112")
-	arAccount, _ := s.repo.GetAccountByCode(ctx, schema, "1121")
-	salesAccount, _ := s.repo.GetAccountByCode(ctx, schema, "4110")
-	taxAccount, _ := s.repo.GetAccountByCode(ctx, schema, "2121")
-
-	// DEBIT LINES (DEBE)
+	// DEBIT LINES (DEBE) - usando cuentas configuradas
 	// 1. Caja General - ventas en efectivo (subtotal + tax)
 	if summary.CashTotal > 0 {
 		entry.Lines = append(entry.Lines, JournalEntryLine{
 			ID:             uuid.New(),
 			JournalEntryID: entry.ID,
-			AccountCode:    "1111",
+			AccountCode:    cashAccount.AccountCode,
 			AccountName:    cashAccount.AccountName,
 			Debit:          summary.CashTotal,
 			Credit:         0,
@@ -488,7 +536,7 @@ func (s *Service) GenerateDailySalesJournalEntry(ctx context.Context, schema str
 		entry.Lines = append(entry.Lines, JournalEntryLine{
 			ID:             uuid.New(),
 			JournalEntryID: entry.ID,
-			AccountCode:    "1112",
+			AccountCode:    bankAccount.AccountCode,
 			AccountName:    bankAccount.AccountName,
 			Debit:          cardAndTransferTotal,
 			Credit:         0,
@@ -502,7 +550,7 @@ func (s *Service) GenerateDailySalesJournalEntry(ctx context.Context, schema str
 		entry.Lines = append(entry.Lines, JournalEntryLine{
 			ID:             uuid.New(),
 			JournalEntryID: entry.ID,
-			AccountCode:    "1121",
+			AccountCode:    arAccount.AccountCode,
 			AccountName:    arAccount.AccountName,
 			Debit:          summary.CreditTotal,
 			Credit:         0,
@@ -511,13 +559,13 @@ func (s *Service) GenerateDailySalesJournalEntry(ctx context.Context, schema str
 		})
 	}
 
-	// CREDIT LINES (HABER)
+	// CREDIT LINES (HABER) - usando cuentas configuradas
 	// 4. Ventas - subtotal de todas las ventas
 	if summary.TotalSubtotal > 0 {
 		entry.Lines = append(entry.Lines, JournalEntryLine{
 			ID:             uuid.New(),
 			JournalEntryID: entry.ID,
-			AccountCode:    "4110",
+			AccountCode:    salesAccount.AccountCode,
 			AccountName:    salesAccount.AccountName,
 			Debit:          0,
 			Credit:         summary.TotalSubtotal,
@@ -531,7 +579,7 @@ func (s *Service) GenerateDailySalesJournalEntry(ctx context.Context, schema str
 		entry.Lines = append(entry.Lines, JournalEntryLine{
 			ID:             uuid.New(),
 			JournalEntryID: entry.ID,
-			AccountCode:    "2121",
+			AccountCode:    taxAccount.AccountCode,
 			AccountName:    taxAccount.AccountName,
 			Debit:          0,
 			Credit:         summary.TotalTax,
@@ -540,15 +588,14 @@ func (s *Service) GenerateDailySalesJournalEntry(ctx context.Context, schema str
 		})
 	}
 
-	// 6. Impuesto Selectivo (si aplica) - por ahora 0, pero estructura lista
+	// 6. Impuesto Selectivo (si aplica)
 	if summary.TotalSelective > 0 {
-		// Verificar si existe la cuenta 2123 para Impuesto Selectivo
-		selectiveAccount, err := s.repo.GetAccountByCode(ctx, schema, "2123")
+		selectiveAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypeTaxSelective, "2123", "Impuesto Selectivo por Pagar")
 		if err == nil {
 			entry.Lines = append(entry.Lines, JournalEntryLine{
 				ID:             uuid.New(),
 				JournalEntryID: entry.ID,
-				AccountCode:    "2123",
+				AccountCode:    selectiveAccount.AccountCode,
 				AccountName:    selectiveAccount.AccountName,
 				Debit:          0,
 				Credit:         summary.TotalSelective,
@@ -577,6 +624,389 @@ func (s *Service) GenerateDailySalesJournalEntry(ctx context.Context, schema str
 	}
 
 	logger.Info("Daily sales journal entry created", "entry_number", entry.EntryNumber, "date", date)
+	return entry, nil
+}
+
+// Account Mapping methods
+
+// GetAccountForTransaction obtiene la cuenta configurada para un tipo de transacción
+func (s *Service) GetAccountForTransaction(ctx context.Context, schema string, transactionType string, defaultCode string, defaultName string) (*ChartOfAccounts, error) {
+	mapping, err := s.repo.GetAccountMappingWithFallback(ctx, schema, transactionType, defaultCode, defaultName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account mapping: %w", err)
+	}
+	
+	account, err := s.repo.GetAccountByCode(ctx, schema, mapping.AccountCode)
+	if err != nil {
+		return nil, fmt.Errorf("account %s not found for transaction type %s", mapping.AccountCode, transactionType)
+	}
+	
+	return account, nil
+}
+
+// ListAccountMappings lista todos los mapeos de cuentas
+func (s *Service) ListAccountMappings(ctx context.Context, schema string) ([]*AccountMapping, error) {
+	mappings, err := s.repo.ListAccountMappings(ctx, schema)
+	if err != nil {
+		logger.Error("Failed to list account mappings", "error", err)
+		return nil, fmt.Errorf("failed to list account mappings: %w", err)
+	}
+	
+	if mappings == nil {
+		mappings = []*AccountMapping{}
+	}
+	
+	return mappings, nil
+}
+
+// GetAccountMapping obtiene el mapeo para un tipo de transacción
+func (s *Service) GetAccountMapping(ctx context.Context, schema string, transactionType string) (*AccountMapping, error) {
+	mapping, err := s.repo.GetAccountMapping(ctx, schema, transactionType)
+	if err != nil {
+		return nil, fmt.Errorf("account mapping not found: %w", err)
+	}
+	return mapping, nil
+}
+
+// CreateOrUpdateAccountMapping crea o actualiza un mapeo
+func (s *Service) CreateOrUpdateAccountMapping(ctx context.Context, schema string, req *CreateAccountMappingRequest) (*AccountMapping, error) {
+	// Verificar que la cuenta existe
+	account, err := s.repo.GetAccountByCode(ctx, schema, req.AccountCode)
+	if err != nil {
+		return nil, fmt.Errorf("account %s not found", req.AccountCode)
+	}
+	
+	mapping := &AccountMapping{
+		ID:              uuid.New(),
+		TransactionType: req.TransactionType,
+		AccountCode:     req.AccountCode,
+		AccountName:     account.AccountName,
+		Description:     req.Description,
+		IsActive:        true,
+	}
+	
+	if err := s.repo.CreateAccountMapping(ctx, schema, mapping); err != nil {
+		logger.Error("Failed to create account mapping", "error", err)
+		return nil, fmt.Errorf("failed to create account mapping: %w", err)
+	}
+	
+	logger.Info("Account mapping created/updated", "transaction_type", req.TransactionType, "account_code", req.AccountCode)
+	return mapping, nil
+}
+
+// UpdateAccountMapping actualiza un mapeo existente
+func (s *Service) UpdateAccountMapping(ctx context.Context, schema string, transactionType string, req *UpdateAccountMappingRequest) (*AccountMapping, error) {
+	// Obtener mapeo existente
+	existing, err := s.repo.GetAccountMapping(ctx, schema, transactionType)
+	if err != nil {
+		return nil, fmt.Errorf("account mapping not found: %w", err)
+	}
+	
+	// Actualizar campos
+	if req.AccountCode != nil {
+		// Verificar que la nueva cuenta existe
+		account, err := s.repo.GetAccountByCode(ctx, schema, *req.AccountCode)
+		if err != nil {
+			return nil, fmt.Errorf("account %s not found", *req.AccountCode)
+		}
+		existing.AccountCode = *req.AccountCode
+		existing.AccountName = account.AccountName
+	}
+	if req.Description != nil {
+		existing.Description = req.Description
+	}
+	if req.IsActive != nil {
+		existing.IsActive = *req.IsActive
+	}
+	
+	if err := s.repo.UpdateAccountMapping(ctx, schema, transactionType, existing); err != nil {
+		logger.Error("Failed to update account mapping", "error", err)
+		return nil, fmt.Errorf("failed to update account mapping: %w", err)
+	}
+	
+	logger.Info("Account mapping updated", "transaction_type", transactionType)
+	return existing, nil
+}
+
+// GeneratePaymentJournalEntry genera un asiento contable para un pago
+// DEBE: Cuenta de pago (Caja/Banco) según método de pago
+// HABER: Cuenta de cliente (CXC) o cuenta de gasto según el tipo
+func (s *Service) GeneratePaymentJournalEntry(ctx context.Context, schema string, paymentID string, userID *uuid.UUID) (*JournalEntry, error) {
+	// Obtener información del pago
+	paymentData, err := s.repo.GetPaymentByID(ctx, schema, paymentID)
+	if err != nil {
+		return nil, fmt.Errorf("payment not found: %w", err)
+	}
+	
+	// Extraer valores del mapa
+	paymentNumber, _ := paymentData["payment_number"].(string)
+	paymentMethod, _ := paymentData["payment_method"].(string)
+	amount, _ := paymentData["amount"].(float64)
+	
+	var customerID *uuid.UUID
+	if cid, ok := paymentData["customer_id"].(uuid.UUID); ok {
+		customerID = &cid
+	} else if cidStr, ok := paymentData["customer_id"].(string); ok && cidStr != "" {
+		if parsed, err := uuid.Parse(cidStr); err == nil {
+			customerID = &parsed
+		}
+	}
+	
+	var paymentDate time.Time
+	if pd, ok := paymentData["payment_date"].(time.Time); ok {
+		paymentDate = pd
+	} else if pdStr, ok := paymentData["payment_date"].(string); ok {
+		if parsed, err := time.Parse("2006-01-02", pdStr); err == nil {
+			paymentDate = parsed
+		} else {
+			paymentDate = time.Now()
+		}
+	} else {
+		paymentDate = time.Now()
+	}
+	
+	var reference *string
+	if ref, ok := paymentData["reference"].(*string); ok && ref != nil {
+		reference = ref
+	} else if refStr, ok := paymentData["reference"].(string); ok && refStr != "" {
+		reference = &refStr
+	}
+	
+	var notes *string
+	if n, ok := paymentData["notes"].(*string); ok && n != nil {
+		notes = n
+	} else if nStr, ok := paymentData["notes"].(string); ok && nStr != "" {
+		notes = &nStr
+	}
+	
+	// Generar número de asiento
+	entryNumber, err := s.repo.GetNextEntryNumber(ctx, schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate entry number: %w", err)
+	}
+	
+	entry := &JournalEntry{
+		ID:          uuid.New(),
+		EntryNumber: entryNumber,
+		EntryDate:   paymentDate,
+		Description: fmt.Sprintf("Pago %s", paymentNumber),
+		Reference:   reference,
+		Status:      "posted",
+		CreatedBy:   userID,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Lines:       []JournalEntryLine{},
+	}
+	
+	// Determinar cuenta de pago según método
+	var paymentAccount *ChartOfAccounts
+	var paymentTransactionType string
+	switch paymentMethod {
+	case "cash":
+		paymentTransactionType = TransactionTypePaymentCash
+	case "card", "transfer", "check":
+		paymentTransactionType = TransactionTypePaymentBank
+	default:
+		paymentTransactionType = TransactionTypePaymentCash // Por defecto
+	}
+	
+	paymentAccount, err = s.GetAccountForTransaction(ctx, schema, paymentTransactionType, "1111", "Caja General")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get payment account: %w", err)
+	}
+	
+	// Determinar cuenta de crédito (HABER)
+	var creditAccount *ChartOfAccounts
+	if customerID != nil {
+		// Es un pago de cliente - reducir CXC (Clientes)
+		creditAccount, err = s.GetAccountForTransaction(ctx, schema, TransactionTypeSalesCredit, "1121", "Clientes")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get accounts receivable account: %w", err)
+		}
+	} else {
+		// Es un gasto - usar cuenta de gastos generales
+		creditAccount, err = s.GetAccountForTransaction(ctx, schema, TransactionTypeExpenseGeneral, "6100", "Gastos de Administración")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get expense account: %w", err)
+		}
+	}
+	
+	// Crear líneas del asiento
+	// DEBE: Cuenta de pago
+	entry.Lines = append(entry.Lines, JournalEntryLine{
+		ID:             uuid.New(),
+		JournalEntryID: entry.ID,
+		AccountCode:    paymentAccount.AccountCode,
+		AccountName:    paymentAccount.AccountName,
+		Debit:          amount,
+		Credit:         0,
+		Description:    notes,
+		CreatedAt:      time.Now(),
+	})
+	
+	// HABER: Cuenta de cliente o gasto
+	entry.Lines = append(entry.Lines, JournalEntryLine{
+		ID:             uuid.New(),
+		JournalEntryID: entry.ID,
+		AccountCode:    creditAccount.AccountCode,
+		AccountName:    creditAccount.AccountName,
+		Debit:          0,
+		Credit:         amount,
+		Description:    notes,
+		CreatedAt:      time.Now(),
+	})
+	
+	// Guardar asiento
+	if err := s.repo.CreateJournalEntry(ctx, schema, entry); err != nil {
+		logger.Error("Failed to create payment journal entry", "error", err)
+		return nil, fmt.Errorf("failed to create journal entry: %w", err)
+	}
+	
+	logger.Info("Payment journal entry created", "entry_number", entry.EntryNumber, "payment_id", paymentID)
+	return entry, nil
+}
+
+// GenerateExpenseJournalEntry genera un asiento contable para un gasto
+// DEBE: Cuenta de gasto según categoría
+// HABER: Cuenta de pago (Caja/Banco) según método de pago
+func (s *Service) GenerateExpenseJournalEntry(ctx context.Context, schema string, paymentID string, userID *uuid.UUID) (*JournalEntry, error) {
+	// Obtener información del gasto
+	expenseData, err := s.repo.GetPaymentByID(ctx, schema, paymentID)
+	if err != nil {
+		return nil, fmt.Errorf("expense not found: %w", err)
+	}
+	
+	// Verificar que es un gasto (tiene prefijo EXP-)
+	paymentNumber, _ := expenseData["payment_number"].(string)
+	if len(paymentNumber) < 4 || paymentNumber[:4] != "EXP-" {
+		return nil, fmt.Errorf("payment is not an expense")
+	}
+	
+	// Extraer valores del mapa
+	paymentMethod, _ := expenseData["payment_method"].(string)
+	amount, _ := expenseData["amount"].(float64)
+	category, _ := expenseData["category"].(string)
+	supplier, _ := expenseData["supplier"].(string)
+	description, _ := expenseData["description"].(string)
+	
+	var paymentDate time.Time
+	if pd, ok := expenseData["payment_date"].(time.Time); ok {
+		paymentDate = pd
+	} else if pdStr, ok := expenseData["payment_date"].(string); ok {
+		if parsed, err := time.Parse("2006-01-02", pdStr); err == nil {
+			paymentDate = parsed
+		}
+	}
+	
+	var reference *string
+	if ref, ok := expenseData["reference"].(string); ok && ref != "" {
+		reference = &ref
+	}
+	
+	var notes *string
+	if n, ok := expenseData["notes"].(string); ok && n != "" {
+		notes = &n
+	}
+	
+	// Generar número de asiento
+	entryNumber, err := s.repo.GetNextEntryNumber(ctx, schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate entry number: %w", err)
+	}
+	
+	desc := fmt.Sprintf("Gasto %s", paymentNumber)
+	if description != "" {
+		desc = fmt.Sprintf("Gasto %s - %s", paymentNumber, description)
+	}
+	if supplier != "" {
+		desc = fmt.Sprintf("%s - %s", desc, supplier)
+	}
+	
+	entry := &JournalEntry{
+		ID:          uuid.New(),
+		EntryNumber: entryNumber,
+		EntryDate:   paymentDate,
+		Description: desc,
+		Reference:   reference,
+		Status:      "posted",
+		CreatedBy:   userID,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Lines:       []JournalEntryLine{},
+	}
+	
+	// Determinar cuenta de gasto según categoría
+	var expenseAccount *ChartOfAccounts
+	var expenseTransactionType string
+	switch category {
+	case "utilities", "servicios":
+		expenseTransactionType = TransactionTypeExpenseUtilities
+	case "rent", "alquiler":
+		expenseTransactionType = TransactionTypeExpenseRent
+	case "supplies", "suministros":
+		expenseTransactionType = TransactionTypeExpenseSupplies
+	default:
+		expenseTransactionType = TransactionTypeExpenseGeneral
+	}
+	
+	expenseAccount, err = s.GetAccountForTransaction(ctx, schema, expenseTransactionType, "6100", "Gastos de Administración")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get expense account: %w", err)
+	}
+	
+	// Determinar cuenta de pago según método
+	var paymentAccount *ChartOfAccounts
+	var paymentTransactionType string
+	switch paymentMethod {
+	case "cash":
+		paymentTransactionType = TransactionTypePaymentCash
+	case "card", "transfer", "check":
+		paymentTransactionType = TransactionTypePaymentBank
+	default:
+		paymentTransactionType = TransactionTypePaymentCash // Por defecto
+	}
+	
+	paymentAccount, err = s.GetAccountForTransaction(ctx, schema, paymentTransactionType, "1111", "Caja General")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get payment account: %w", err)
+	}
+	
+	// Crear líneas del asiento
+	// DEBE: Cuenta de gasto
+	descPtr := &description
+	if description == "" {
+		descPtr = notes
+	}
+	entry.Lines = append(entry.Lines, JournalEntryLine{
+		ID:             uuid.New(),
+		JournalEntryID: entry.ID,
+		AccountCode:    expenseAccount.AccountCode,
+		AccountName:    expenseAccount.AccountName,
+		Debit:          amount,
+		Credit:         0,
+		Description:    descPtr,
+		CreatedAt:      time.Now(),
+	})
+	
+	// HABER: Cuenta de pago
+	entry.Lines = append(entry.Lines, JournalEntryLine{
+		ID:             uuid.New(),
+		JournalEntryID: entry.ID,
+		AccountCode:    paymentAccount.AccountCode,
+		AccountName:    paymentAccount.AccountName,
+		Debit:          0,
+		Credit:         amount,
+		Description:    notes,
+		CreatedAt:      time.Now(),
+	})
+	
+	// Guardar asiento
+	if err := s.repo.CreateJournalEntry(ctx, schema, entry); err != nil {
+		logger.Error("Failed to create expense journal entry", "error", err)
+		return nil, fmt.Errorf("failed to create journal entry: %w", err)
+	}
+	
+	logger.Info("Expense journal entry created", "entry_number", entry.EntryNumber, "expense_id", paymentID)
 	return entry, nil
 }
 

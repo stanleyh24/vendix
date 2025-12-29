@@ -19,14 +19,15 @@ func NewRepository(db *database.DB) *Repository {
 
 func (r *Repository) Create(ctx context.Context, schema string, payment *Payment) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s.payments (id, payment_number, customer_id, payment_method, payment_date, amount, currency, reference, notes, status, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO %s.payments (id, payment_number, customer_id, payment_method, payment_date, amount, currency, reference, notes, status, category, supplier, description, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`, schema)
 
 	_, err := r.db.ExecContext(ctx, query,
 		payment.ID, payment.PaymentNumber, payment.CustomerID, payment.PaymentMethod,
 		payment.PaymentDate, payment.Amount, payment.Currency, payment.Reference,
-		payment.Notes, payment.Status, payment.CreatedBy, payment.CreatedAt, payment.UpdatedAt,
+		payment.Notes, payment.Status, payment.Category, payment.Supplier, payment.Description,
+		payment.CreatedBy, payment.CreatedAt, payment.UpdatedAt,
 	)
 
 	return err
@@ -34,11 +35,30 @@ func (r *Repository) Create(ctx context.Context, schema string, payment *Payment
 
 func (r *Repository) GetByID(ctx context.Context, schema string, id uuid.UUID) (*Payment, error) {
 	var payment Payment
-	query := fmt.Sprintf(`
-		SELECT id, payment_number, customer_id, payment_method, payment_date, amount, currency, reference, notes, stripe_payment_id, status, created_by, created_at, updated_at
-		FROM %s.payments
-		WHERE id = $1
-	`, schema)
+	
+	// Check if new columns exist
+	hasNewColumns := r.hasExpenseColumns(ctx, schema)
+	
+	var query string
+	if hasNewColumns {
+		query = fmt.Sprintf(`
+			SELECT id, payment_number, customer_id, payment_method, payment_date, amount, currency, 
+				reference, notes, stripe_payment_id, status, 
+				category, supplier, description,
+				created_by, created_at, updated_at
+			FROM %s.payments
+			WHERE id = $1
+		`, schema)
+	} else {
+		query = fmt.Sprintf(`
+			SELECT id, payment_number, customer_id, payment_method, payment_date, amount, currency, 
+				reference, notes, stripe_payment_id, status, 
+				'' as category, '' as supplier, '' as description,
+				created_by, created_at, updated_at
+			FROM %s.payments
+			WHERE id = $1
+		`, schema)
+	}
 
 	err := r.db.GetContext(ctx, &payment, query, id)
 	return &payment, err
@@ -46,11 +66,30 @@ func (r *Repository) GetByID(ctx context.Context, schema string, id uuid.UUID) (
 
 func (r *Repository) List(ctx context.Context, schema string) ([]*Payment, error) {
 	var payments []*Payment
-	query := fmt.Sprintf(`
-		SELECT id, payment_number, customer_id, payment_method, payment_date, amount, currency, reference, notes, stripe_payment_id, status, created_by, created_at, updated_at
-		FROM %s.payments
-		ORDER BY payment_date DESC, payment_number DESC
-	`, schema)
+	
+	// Check if new columns exist
+	hasNewColumns := r.hasExpenseColumns(ctx, schema)
+	
+	var query string
+	if hasNewColumns {
+		query = fmt.Sprintf(`
+			SELECT id, payment_number, customer_id, payment_method, payment_date, amount, currency, 
+				reference, notes, stripe_payment_id, status, 
+				category, supplier, description,
+				created_by, created_at, updated_at
+			FROM %s.payments
+			ORDER BY payment_date DESC, payment_number DESC
+		`, schema)
+	} else {
+		query = fmt.Sprintf(`
+			SELECT id, payment_number, customer_id, payment_method, payment_date, amount, currency, 
+				reference, notes, stripe_payment_id, status, 
+				'' as category, '' as supplier, '' as description,
+				created_by, created_at, updated_at
+			FROM %s.payments
+			ORDER BY payment_date DESC, payment_number DESC
+		`, schema)
+	}
 
 	err := r.db.SelectContext(ctx, &payments, query)
 	if err != nil {
@@ -62,6 +101,22 @@ func (r *Repository) List(ctx context.Context, schema string) ([]*Payment, error
 	}
 
 	return payments, nil
+}
+
+// hasExpenseColumns checks if the expense-related columns exist in the payments table
+func (r *Repository) hasExpenseColumns(ctx context.Context, schema string) bool {
+	var exists bool
+	query := fmt.Sprintf(`
+		SELECT EXISTS (
+			SELECT 1 
+			FROM information_schema.columns 
+			WHERE table_schema = $1 
+			AND table_name = 'payments' 
+			AND column_name = 'category'
+		)
+	`)
+	err := r.db.GetContext(ctx, &exists, query, schema)
+	return err == nil && exists
 }
 
 func (r *Repository) Update(ctx context.Context, schema string, payment *Payment) error {

@@ -5,6 +5,7 @@ import api from '../lib/api';
 
 export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
@@ -21,6 +22,7 @@ export default function Expenses() {
     amount: '',
     payment_date: new Date().toISOString().split('T')[0],
     supplier: '',
+    supplier_id: '',
     payment_method: 'cash',
     reference: '',
     notes: '',
@@ -37,9 +39,13 @@ export default function Expenses() {
     { value: 'other', label: 'Otros', color: 'bg-gray-500' },
   ];
 
-  // Cargar gastos del backend
+  // Cargar datos iniciales
   useEffect(() => {
-    loadExpenses();
+    const loadData = async () => {
+      await loadSuppliers();
+      await loadExpenses();
+    };
+    loadData();
   }, []);
 
   const loadExpenses = async () => {
@@ -49,16 +55,21 @@ export default function Expenses() {
       const data = response.data || [];
       
       // Map backend data to frontend format
-      const mappedExpenses = data.map(exp => ({
-        id: exp.id,
-        category: exp.payment_method || 'other',
-        description: exp.notes || 'Sin descripción',
-        amount: exp.amount,
-        date: exp.payment_date?.split('T')[0] || exp.payment_date,
-        supplier: exp.reference || 'Sin proveedor',
-        invoice_number: exp.payment_number,
-        created_at: exp.created_at
-      }));
+      const mappedExpenses = data.map(exp => {
+        // Intentar encontrar el supplier_id basado en el nombre del proveedor
+        const supplierMatch = suppliers.find(s => s.name === exp.supplier);
+        return {
+          id: exp.id,
+          category: exp.category || 'other',
+          description: exp.description || exp.notes || 'Sin descripción',
+          amount: exp.amount,
+          date: exp.payment_date?.split('T')[0] || exp.payment_date,
+          supplier: exp.supplier || 'Sin proveedor',
+          supplier_id: supplierMatch ? supplierMatch.id : null,
+          invoice_number: exp.payment_number,
+          created_at: exp.created_at
+        };
+      });
       
       setExpenses(mappedExpenses);
     } catch (error) {
@@ -67,6 +78,17 @@ export default function Expenses() {
       setExpenses([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSuppliers = async () => {
+    try {
+      const response = await api.get('/suppliers?active=true');
+      setSuppliers(response.data || []);
+    } catch (error) {
+      console.error('Error loading suppliers:', error);
+      // No mostrar error, solo dejar vacío
+      setSuppliers([]);
     }
   };
 
@@ -96,6 +118,7 @@ export default function Expenses() {
       amount: '',
       payment_date: new Date().toISOString().split('T')[0],
       supplier: '',
+      supplier_id: '',
       payment_method: 'cash',
       reference: '',
       notes: '',
@@ -112,8 +135,9 @@ export default function Expenses() {
       amount: expense.amount.toString(),
       payment_date: expense.date,
       supplier: expense.supplier,
+      supplier_id: expense.supplier_id || '',
       payment_method: 'cash',
-      reference: expense.supplier,
+      reference: expense.invoice_number || '',
       notes: expense.description,
     });
     setShowModal(true);
@@ -462,14 +486,62 @@ export default function Expenses() {
                   <label className="block text-sm font-medium text-[#212121] mb-2">
                     Proveedor *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.supplier}
-                    onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-                    className="input-field"
-                    placeholder="Nombre del proveedor"
-                  />
+                  {suppliers.length > 0 ? (
+                    <select
+                      required
+                      value={formData.supplier_id || ''}
+                      onChange={(e) => {
+                        if (e.target.value === 'manual') {
+                          // Si selecciona "Ingresar manualmente", mostrar input
+                          setFormData({ 
+                            ...formData, 
+                            supplier_id: 'manual',
+                            supplier: ''
+                          });
+                        } else {
+                          const selectedSupplier = suppliers.find(s => s.id === e.target.value);
+                          setFormData({ 
+                            ...formData, 
+                            supplier_id: e.target.value,
+                            supplier: selectedSupplier ? selectedSupplier.name : ''
+                          });
+                        }
+                      }}
+                      className="input-field"
+                    >
+                      <option value="">Seleccione un proveedor...</option>
+                      {suppliers.map(supplier => (
+                        <option key={supplier.id} value={supplier.id}>
+                          {supplier.name} {supplier.tax_id ? `(${supplier.tax_id})` : ''}
+                        </option>
+                      ))}
+                      <option value="manual">+ Ingresar proveedor manualmente</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      required
+                      value={formData.supplier}
+                      onChange={(e) => setFormData({ ...formData, supplier: e.target.value, supplier_id: '' })}
+                      className="input-field"
+                      placeholder="Nombre del proveedor"
+                    />
+                  )}
+                  {formData.supplier_id === 'manual' && (
+                    <input
+                      type="text"
+                      required
+                      value={formData.supplier}
+                      onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
+                      className="input-field mt-2"
+                      placeholder="Nombre del proveedor"
+                    />
+                  )}
+                  {suppliers.length === 0 && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      No hay proveedores registrados. <a href="/suppliers" className="text-blue-600 hover:underline">Crear proveedor</a>
+                    </p>
+                  )}
                 </div>
 
                 <div>

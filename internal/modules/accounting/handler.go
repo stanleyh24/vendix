@@ -29,6 +29,7 @@ func RegisterRoutes(router fiber.Router, db *database.DB, cfg *config.Config) {
 	accounting.Post("/accounts", h.CreateAccount)
 	accounting.Get("/accounts/:code", h.GetAccount)
 	accounting.Put("/accounts/:code", h.UpdateAccount)
+	accounting.Delete("/accounts/:code", h.DeleteAccount)
 
 	// Journal Entries
 	accounting.Get("/journal-entries", h.ListJournalEntries)
@@ -42,6 +43,16 @@ func RegisterRoutes(router fiber.Router, db *database.DB, cfg *config.Config) {
 	accounting.Get("/trial-balance", h.GetTrialBalance)
 	accounting.Get("/balance-sheet", h.GetBalanceSheet)
 	accounting.Get("/income-statement", h.GetIncomeStatement)
+
+	// Account Mappings
+	accounting.Get("/account-mappings", h.ListAccountMappings)
+	accounting.Post("/account-mappings", h.CreateOrUpdateAccountMapping)
+	accounting.Get("/account-mappings/:type", h.GetAccountMapping)
+	accounting.Put("/account-mappings/:type", h.UpdateAccountMapping)
+
+	// Payment and Expense Journal Entries
+	accounting.Post("/journal-entries/payment/:id", h.GeneratePaymentJournalEntry)
+	accounting.Post("/journal-entries/expense/:id", h.GenerateExpenseJournalEntry)
 }
 
 // Chart of Accounts handlers
@@ -161,6 +172,42 @@ func (h *Handler) UpdateAccount(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(account)
+}
+
+// DeleteAccount elimina una cuenta del plan de cuentas
+// @Summary Delete account
+// @Tags accounting
+// @Produce json
+// @Param code path string true "Account code"
+// @Success 204 "Account deleted successfully"
+// @Failure 400 {object} map[string]string "Account has journal entries or child accounts"
+// @Failure 404 {object} map[string]string "Account not found"
+// @Router /api/v1/tenant/accounting/accounts/{code} [delete]
+func (h *Handler) DeleteAccount(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	code := c.Params("code")
+
+	err := h.service.DeleteAccount(c.Context(), schema, code)
+	if err != nil {
+		errMsg := err.Error()
+		// Verificar si es un error de validación (tiene asientos o cuentas hijas)
+		if strings.Contains(errMsg, "has journal entries") || strings.Contains(errMsg, "has child accounts") {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": errMsg,
+			})
+		}
+		// Si contiene "not found", es un error 404
+		if strings.Contains(errMsg, "not found") {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": errMsg,
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": errMsg,
+		})
+	}
+
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 // Journal Entry handlers
@@ -404,5 +451,162 @@ func (h *Handler) GenerateDailySalesJournalEntry(c *fiber.Ctx) error {
 		})
 	}
 
+	return c.Status(fiber.StatusCreated).JSON(entry)
+}
+
+// Account Mapping handlers
+
+// ListAccountMappings lista todos los mapeos de cuentas
+// @Summary List account mappings
+// @Tags accounting
+// @Produce json
+// @Success 200 {array} AccountMapping
+// @Security BearerAuth
+// @Router /api/v1/tenant/accounting/account-mappings [get]
+func (h *Handler) ListAccountMappings(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	mappings, err := h.service.ListAccountMappings(c.Context(), schema)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	return c.JSON(mappings)
+}
+
+// GetAccountMapping obtiene el mapeo para un tipo de transacción
+// @Summary Get account mapping
+// @Tags accounting
+// @Produce json
+// @Param type path string true "Transaction type"
+// @Success 200 {object} AccountMapping
+// @Security BearerAuth
+// @Router /api/v1/tenant/accounting/account-mappings/{type} [get]
+func (h *Handler) GetAccountMapping(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	transactionType := c.Params("type")
+	
+	mapping, err := h.service.GetAccountMapping(c.Context(), schema, transactionType)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Account mapping not found",
+		})
+	}
+	return c.JSON(mapping)
+}
+
+// CreateOrUpdateAccountMapping crea o actualiza un mapeo
+// @Summary Create or update account mapping
+// @Tags accounting
+// @Accept json
+// @Produce json
+// @Param mapping body CreateAccountMappingRequest true "Account mapping data"
+// @Success 201 {object} AccountMapping
+// @Security BearerAuth
+// @Router /api/v1/tenant/accounting/account-mappings [post]
+func (h *Handler) CreateOrUpdateAccountMapping(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	var req CreateAccountMappingRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request body",
+		})
+	}
+	
+	mapping, err := h.service.CreateOrUpdateAccountMapping(c.Context(), schema, &req)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	return c.Status(fiber.StatusCreated).JSON(mapping)
+}
+
+// UpdateAccountMapping actualiza un mapeo existente
+// @Summary Update account mapping
+// @Tags accounting
+// @Accept json
+// @Produce json
+// @Param type path string true "Transaction type"
+// @Param mapping body UpdateAccountMappingRequest true "Account mapping data"
+// @Success 200 {object} AccountMapping
+// @Security BearerAuth
+// @Router /api/v1/tenant/accounting/account-mappings/{type} [put]
+func (h *Handler) UpdateAccountMapping(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	transactionType := c.Params("type")
+	var req UpdateAccountMappingRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request body",
+		})
+	}
+	
+	mapping, err := h.service.UpdateAccountMapping(c.Context(), schema, transactionType, &req)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	return c.JSON(mapping)
+}
+
+// GeneratePaymentJournalEntry genera un asiento contable para un pago
+// @Summary Generate payment journal entry
+// @Tags accounting
+// @Accept json
+// @Produce json
+// @Param id path string true "Payment ID"
+// @Success 201 {object} JournalEntry
+// @Security BearerAuth
+// @Router /api/v1/tenant/accounting/journal-entries/payment/{id} [post]
+func (h *Handler) GeneratePaymentJournalEntry(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	paymentID := c.Params("id")
+	
+	var userIDPtr *uuid.UUID
+	if userIDStr := c.Get("X-User-ID"); userIDStr != "" {
+		if userID, err := uuid.Parse(userIDStr); err == nil {
+			userIDPtr = &userID
+		}
+	}
+	
+	entry, err := h.service.GeneratePaymentJournalEntry(c.Context(), schema, paymentID, userIDPtr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	
+	return c.Status(fiber.StatusCreated).JSON(entry)
+}
+
+// GenerateExpenseJournalEntry genera un asiento contable para un gasto
+// @Summary Generate expense journal entry
+// @Tags accounting
+// @Accept json
+// @Produce json
+// @Param id path string true "Payment/Expense ID"
+// @Success 201 {object} JournalEntry
+// @Security BearerAuth
+// @Router /api/v1/tenant/accounting/journal-entries/expense/{id} [post]
+func (h *Handler) GenerateExpenseJournalEntry(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	paymentID := c.Params("id")
+	
+	var userIDPtr *uuid.UUID
+	if userIDStr := c.Get("X-User-ID"); userIDStr != "" {
+		if userID, err := uuid.Parse(userIDStr); err == nil {
+			userIDPtr = &userID
+		}
+	}
+	
+	entry, err := h.service.GenerateExpenseJournalEntry(c.Context(), schema, paymentID, userIDPtr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	
 	return c.Status(fiber.StatusCreated).JSON(entry)
 }

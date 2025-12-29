@@ -857,5 +857,75 @@ func getTenantMigrations() []Migration {
 				ADD COLUMN IF NOT EXISTS xml_url TEXT;
 			`,
 		},
+		{
+			Version: 30,
+			Name:    "create_account_mappings_table",
+			SQL: `
+				-- Tabla para mapear tipos de transacciones a cuentas contables
+				-- Permite configurar qué cuenta usar para cada tipo de movimiento
+				CREATE TABLE IF NOT EXISTS account_mappings (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					transaction_type VARCHAR(100) UNIQUE NOT NULL,
+					account_code VARCHAR(50) NOT NULL,
+					account_name VARCHAR(255) NOT NULL,
+					description TEXT,
+					is_active BOOLEAN DEFAULT true,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_account_mappings_transaction_type ON account_mappings(transaction_type);
+				CREATE INDEX idx_account_mappings_account_code ON account_mappings(account_code);
+				CREATE INDEX idx_account_mappings_is_active ON account_mappings(is_active);
+
+				-- Insertar valores por defecto para tipos de transacciones comunes
+				INSERT INTO account_mappings (transaction_type, account_code, account_name, description) VALUES
+					-- Ventas
+					('sales_cash', '1111', 'Caja General', 'Cuenta para ventas en efectivo'),
+					('sales_card', '1112', 'Banco - Cuenta Corriente', 'Cuenta para ventas con tarjeta'),
+					('sales_transfer', '1112', 'Banco - Cuenta Corriente', 'Cuenta para ventas con transferencia'),
+					('sales_credit', '1121', 'Clientes', 'Cuenta para ventas a crédito (CXC)'),
+					('sales_revenue', '4110', 'Ventas', 'Cuenta de ingresos por ventas'),
+					('sales_discount', '4111', 'Descuentos en Ventas', 'Cuenta para descuentos otorgados'),
+					
+					-- Impuestos
+					('tax_payable', '2121', 'ITBIS por Pagar', 'Cuenta para ITBIS a pagar'),
+					('tax_selective', '2123', 'Impuesto Selectivo por Pagar', 'Cuenta para impuesto selectivo'),
+					
+					-- Gastos
+					('expense_general', '6100', 'Gastos de Administración', 'Cuenta para gastos generales'),
+					('expense_utilities', '6130', 'Servicios Públicos', 'Cuenta para servicios públicos'),
+					('expense_rent', '6120', 'Alquileres', 'Cuenta para alquileres'),
+					('expense_supplies', '6140', 'Papelería y Útiles', 'Cuenta para suministros'),
+					
+					-- Pagos
+					('payment_cash', '1111', 'Caja General', 'Cuenta para pagos en efectivo'),
+					('payment_bank', '1112', 'Banco - Cuenta Corriente', 'Cuenta para pagos bancarios'),
+					
+					-- Compras/Proveedores
+					('purchase_accounts_payable', '2111', 'Proveedores', 'Cuenta para cuentas por pagar'),
+					('purchase_inventory', '1131', 'Inventario de Mercancías', 'Cuenta para compras de inventario'),
+					('purchase_expense', '5100', 'Costo de Ventas', 'Cuenta para costos de compras'),
+					
+					-- Pagos a proveedores
+					('supplier_payment_cash', '1111', 'Caja General', 'Cuenta para pagos a proveedores en efectivo'),
+					('supplier_payment_bank', '1112', 'Banco - Cuenta Corriente', 'Cuenta para pagos a proveedores bancarios')
+				ON CONFLICT (transaction_type) DO NOTHING;
+			`,
+		},
+		{
+			Version: 31,
+			Name:    "add_expense_fields_to_payments",
+			SQL: `
+				-- Agregar campos para categorización de gastos
+				ALTER TABLE payments 
+				ADD COLUMN IF NOT EXISTS category VARCHAR(100),
+				ADD COLUMN IF NOT EXISTS supplier VARCHAR(255),
+				ADD COLUMN IF NOT EXISTS description TEXT;
+
+				CREATE INDEX IF NOT EXISTS idx_payments_category ON payments(category);
+				CREATE INDEX IF NOT EXISTS idx_payments_supplier ON payments(supplier);
+			`,
+		},
 	}
 }

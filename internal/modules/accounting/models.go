@@ -138,3 +138,63 @@ type FinancialStatementItem struct {
 type GenerateDailySalesJournalEntryRequest struct {
 	Date string `json:"date" validate:"required"` // Format: YYYY-MM-DD
 }
+
+// Transaction type constants for account mappings
+const (
+	// Ventas
+	TransactionTypeSalesCash      = "sales_cash"
+	TransactionTypeSalesCard       = "sales_card"
+	TransactionTypeSalesTransfer   = "sales_transfer"
+	TransactionTypeSalesCredit     = "sales_credit"
+	TransactionTypeSalesRevenue    = "sales_revenue"
+	TransactionTypeSalesDiscount   = "sales_discount"
+	
+	// Impuestos
+	TransactionTypeTaxPayable      = "tax_payable"
+	TransactionTypeTaxSelective    = "tax_selective"
+	
+	// Gastos
+	TransactionTypeExpenseGeneral  = "expense_general"
+	TransactionTypeExpenseUtilities = "expense_utilities"
+	TransactionTypeExpenseRent     = "expense_rent"
+	TransactionTypeExpenseSupplies = "expense_supplies"
+	
+	// Pagos
+	TransactionTypePaymentCash     = "payment_cash"
+	TransactionTypePaymentBank     = "payment_bank"
+	
+	// Compras
+	TransactionTypePurchaseAP      = "purchase_accounts_payable"
+	TransactionTypePurchaseInventory = "purchase_inventory"
+	TransactionTypePurchaseExpense = "purchase_expense"
+	
+	// Pagos a proveedores
+	TransactionTypeSupplierPaymentCash = "supplier_payment_cash"
+	TransactionTypeSupplierPaymentBank = "supplier_payment_bank"
+)
+
+// AccountMapping represents the mapping of transaction type to accounting account
+type AccountMapping struct {
+	ID              uuid.UUID `db:"id" json:"id"`
+	TransactionType string    `db:"transaction_type" json:"transaction_type"`
+	AccountCode     string    `db:"account_code" json:"account_code"`
+	AccountName     string    `db:"account_name" json:"account_name"`
+	Description     *string   `db:"description" json:"description,omitempty"`
+	IsActive        bool      `db:"is_active" json:"is_active"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// CreateAccountMappingRequest DTO
+type CreateAccountMappingRequest struct {
+	TransactionType string  `json:"transaction_type" validate:"required"`
+	AccountCode     string  `json:"account_code" validate:"required"`
+	Description     *string `json:"description,omitempty"`
+}
+
+// UpdateAccountMappingRequest DTO
+type UpdateAccountMappingRequest struct {
+	AccountCode *string `json:"account_code,omitempty"`
+	Description *string `json:"description,omitempty"`
+	IsActive    *bool   `json:"is_active,omitempty"`
+}

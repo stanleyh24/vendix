@@ -3,6 +3,7 @@ package accounting
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"vendix/internal/database"
 
@@ -109,6 +110,34 @@ func (r *Repository) UpdateAccount(ctx context.Context, schema string, account *
 func (r *Repository) UpdateAccountBalance(ctx context.Context, schema string, code string, balance float64) error {
 	query := fmt.Sprintf(`UPDATE %s.chart_of_accounts SET balance = $1 WHERE account_code = $2`, schema)
 	_, err := r.db.ExecContext(ctx, query, balance, code)
+	return err
+}
+
+// AccountHasJournalEntries verifica si una cuenta tiene asientos contables
+func (r *Repository) AccountHasJournalEntries(ctx context.Context, schema string, accountCode string) (bool, error) {
+	var count int
+	query := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM %s.journal_entry_lines
+		WHERE account_code = $1
+	`, schema)
+	
+	err := r.db.GetContext(ctx, &count, query, accountCode)
+	if err != nil {
+		return false, err
+	}
+	
+	return count > 0, nil
+}
+
+// DeleteAccount elimina una cuenta del plan de cuentas
+func (r *Repository) DeleteAccount(ctx context.Context, schema string, accountCode string) error {
+	query := fmt.Sprintf(`
+		DELETE FROM %s.chart_of_accounts
+		WHERE account_code = $1
+	`, schema)
+	
+	_, err := r.db.ExecContext(ctx, query, accountCode)
 	return err
 }
 
@@ -366,4 +395,148 @@ func (r *Repository) GetTrialBalance(ctx context.Context, schema string, asOfDat
 
 	err := r.db.SelectContext(ctx, &entries, baseQuery, args...)
 	return entries, err
+}
+
+// Account Mapping methods
+
+// GetAccountMapping obtiene el mapeo de cuenta para un tipo de transacción
+func (r *Repository) GetAccountMapping(ctx context.Context, schema string, transactionType string) (*AccountMapping, error) {
+	var mapping AccountMapping
+	query := fmt.Sprintf(`
+		SELECT id, transaction_type, account_code, account_name, description, is_active, created_at, updated_at
+		FROM %s.account_mappings
+		WHERE transaction_type = $1 AND is_active = true
+	`, schema)
+	
+	err := r.db.GetContext(ctx, &mapping, query, transactionType)
+	if err != nil {
+		return nil, err
+	}
+	return &mapping, nil
+}
+
+// GetAccountMappingWithFallback obtiene el mapeo o usa un valor por defecto
+func (r *Repository) GetAccountMappingWithFallback(ctx context.Context, schema string, transactionType string, defaultCode string, defaultName string) (*AccountMapping, error) {
+	mapping, err := r.GetAccountMapping(ctx, schema, transactionType)
+	if err != nil {
+		// Si no existe, crear uno temporal con valores por defecto
+		return &AccountMapping{
+			TransactionType: transactionType,
+			AccountCode:     defaultCode,
+			AccountName:     defaultName,
+			IsActive:        true,
+		}, nil
+	}
+	return mapping, nil
+}
+
+// ListAccountMappings lista todos los mapeos
+func (r *Repository) ListAccountMappings(ctx context.Context, schema string) ([]*AccountMapping, error) {
+	var mappings []*AccountMapping
+	query := fmt.Sprintf(`
+		SELECT id, transaction_type, account_code, account_name, description, is_active, created_at, updated_at
+		FROM %s.account_mappings
+		ORDER BY transaction_type ASC
+	`, schema)
+	
+	err := r.db.SelectContext(ctx, &mappings, query)
+	return mappings, err
+}
+
+// CreateAccountMapping crea un nuevo mapeo
+func (r *Repository) CreateAccountMapping(ctx context.Context, schema string, mapping *AccountMapping) error {
+	// Verificar que la cuenta existe
+	account, err := r.GetAccountByCode(ctx, schema, mapping.AccountCode)
+	if err != nil {
+		return fmt.Errorf("account %s not found", mapping.AccountCode)
+	}
+	
+	mapping.AccountName = account.AccountName
+	
+	query := fmt.Sprintf(`
+		INSERT INTO %s.account_mappings (id, transaction_type, account_code, account_name, description, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+		ON CONFLICT (transaction_type) 
+		DO UPDATE SET 
+			account_code = EXCLUDED.account_code,
+			account_name = EXCLUDED.account_name,
+			description = EXCLUDED.description,
+			is_active = EXCLUDED.is_active,
+			updated_at = NOW()
+	`, schema)
+	
+	_, err = r.db.ExecContext(ctx, query, 
+		mapping.ID, mapping.TransactionType, mapping.AccountCode, 
+		mapping.AccountName, mapping.Description, mapping.IsActive)
+	return err
+}
+
+// UpdateAccountMapping actualiza un mapeo existente
+func (r *Repository) UpdateAccountMapping(ctx context.Context, schema string, transactionType string, mapping *AccountMapping) error {
+	// Si se actualiza el código de cuenta, verificar que existe
+	if mapping.AccountCode != "" {
+		account, err := r.GetAccountByCode(ctx, schema, mapping.AccountCode)
+		if err != nil {
+			return fmt.Errorf("account %s not found", mapping.AccountCode)
+		}
+		mapping.AccountName = account.AccountName
+	}
+	
+	query := fmt.Sprintf(`
+		UPDATE %s.account_mappings
+		SET account_code = COALESCE(NULLIF($1, ''), account_code),
+			account_name = COALESCE(NULLIF($2, ''), account_name),
+			description = COALESCE($3, description),
+			is_active = COALESCE($4, is_active),
+			updated_at = NOW()
+		WHERE transaction_type = $5
+	`, schema)
+	
+	_, err := r.db.ExecContext(ctx, query, 
+		mapping.AccountCode, mapping.AccountName, mapping.Description, 
+		mapping.IsActive, transactionType)
+	return err
+}
+
+// GetPaymentByID obtiene información de un pago usando sqlx
+func (r *Repository) GetPaymentByID(ctx context.Context, schema string, paymentID string) (map[string]interface{}, error) {
+	query := fmt.Sprintf(`
+		SELECT id, payment_number, customer_id, payment_method, payment_date, amount, reference, notes, category, supplier, description
+		FROM %s.payments
+		WHERE id = $1
+	`, schema)
+	
+	var result struct {
+		ID            uuid.UUID  `db:"id"`
+		PaymentNumber string    `db:"payment_number"`
+		CustomerID    *uuid.UUID `db:"customer_id"`
+		PaymentMethod string    `db:"payment_method"`
+		PaymentDate   time.Time `db:"payment_date"`
+		Amount        float64   `db:"amount"`
+		Reference     *string   `db:"reference"`
+		Notes         *string   `db:"notes"`
+		Category      string    `db:"category"`
+		Supplier      string    `db:"supplier"`
+		Description   string    `db:"description"`
+	}
+	
+	if err := r.db.GetContext(ctx, &result, query, paymentID); err != nil {
+		return nil, err
+	}
+	
+	// Convertir a mapa
+	payment := make(map[string]interface{})
+	payment["id"] = result.ID
+	payment["payment_number"] = result.PaymentNumber
+	payment["customer_id"] = result.CustomerID
+	payment["payment_method"] = result.PaymentMethod
+	payment["payment_date"] = result.PaymentDate
+	payment["amount"] = result.Amount
+	payment["reference"] = result.Reference
+	payment["notes"] = result.Notes
+	payment["category"] = result.Category
+	payment["supplier"] = result.Supplier
+	payment["description"] = result.Description
+	
+	return payment, nil
 }
