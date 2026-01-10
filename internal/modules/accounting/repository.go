@@ -397,6 +397,20 @@ func (r *Repository) GetTrialBalance(ctx context.Context, schema string, asOfDat
 	return entries, err
 }
 
+// GetAccountBalanceFromEntries calculates the balance of an account from journal entries
+func (r *Repository) GetAccountBalanceFromEntries(ctx context.Context, schema string, accountCode string) (float64, error) {
+	query := fmt.Sprintf(`
+		SELECT COALESCE(SUM(jel.debit - jel.credit), 0) as balance
+		FROM %s.journal_entry_lines jel
+		INNER JOIN %s.journal_entries je ON jel.journal_entry_id = je.id
+		WHERE jel.account_code = $1 AND je.status = 'posted'
+	`, schema, schema)
+	
+	var balance float64
+	err := r.db.GetContext(ctx, &balance, query, accountCode)
+	return balance, err
+}
+
 // Account Mapping methods
 
 // GetAccountMapping obtiene el mapeo de cuenta para un tipo de transacción

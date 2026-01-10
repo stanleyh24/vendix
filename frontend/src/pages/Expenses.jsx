@@ -42,22 +42,25 @@ export default function Expenses() {
   // Cargar datos iniciales
   useEffect(() => {
     const loadData = async () => {
-      await loadSuppliers();
-      await loadExpenses();
+      const suppliersData = await loadSuppliers();
+      await loadExpenses(suppliersData);
     };
     loadData();
   }, []);
 
-  const loadExpenses = async () => {
+  const loadExpenses = async (suppliersToUse = null) => {
     setLoading(true);
     try {
       const response = await api.get('/expenses');
       const data = response.data || [];
       
+      // Use provided suppliers or fall back to current state
+      const suppliersList = suppliersToUse !== null ? suppliersToUse : suppliers;
+      
       // Map backend data to frontend format
       const mappedExpenses = data.map(exp => {
         // Intentar encontrar el supplier_id basado en el nombre del proveedor
-        const supplierMatch = suppliers.find(s => s.name === exp.supplier);
+        const supplierMatch = suppliersList.find(s => s.name === exp.supplier);
         return {
           id: exp.id,
           category: exp.category || 'other',
@@ -84,11 +87,14 @@ export default function Expenses() {
   const loadSuppliers = async () => {
     try {
       const response = await api.get('/suppliers?active=true');
-      setSuppliers(response.data || []);
+      const suppliersData = response.data || [];
+      setSuppliers(suppliersData);
+      return suppliersData; // Return the data directly
     } catch (error) {
       console.error('Error loading suppliers:', error);
       // No mostrar error, solo dejar vacío
       setSuppliers([]);
+      return []; // Return empty array on error
     }
   };
 

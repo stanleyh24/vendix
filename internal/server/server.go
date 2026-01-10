@@ -7,13 +7,17 @@ import (
 	"vendix/internal/modules/accounting"
 	"vendix/internal/modules/auth"
 	"vendix/internal/modules/cashregisters"
+	"vendix/internal/modules/creditnotes"
 	"vendix/internal/modules/customers"
 	"vendix/internal/modules/employees"
 	"vendix/internal/modules/invoices"
+	"vendix/internal/modules/notifications"
 	"vendix/internal/modules/payments"
 	"vendix/internal/modules/payroll"
 	"vendix/internal/modules/products"
+	"vendix/internal/modules/purchases"
 	"vendix/internal/modules/reports"
+	"vendix/internal/modules/returns"
 	"vendix/internal/modules/sales"
 	"vendix/internal/modules/suppliers"
 	"vendix/internal/modules/tenantconfig"
@@ -119,11 +123,20 @@ func (s *Server) setupRoutes() {
 	// Suppliers management
 	suppliers.RegisterRoutes(protected, s.DB, s.Config)
 
+	// Purchases management
+	purchases.RegisterRoutes(protected, s.DB, s.Config)
+
 	// Invoice management
 	invoices.RegisterRoutes(protected, s.DB, s.Config)
 
+	// Credit Notes management (DGII NCF tipo 04)
+	creditnotes.RegisterRoutes(protected, s.DB, s.Config)
+
 	// Sales management (POS)
 	sales.RegisterRoutes(protected, s.DB, s.Config)
+
+	// Returns management
+	returns.RegisterRoutes(protected, s.DB, s.Config)
 
 	// Payment management
 	payments.RegisterRoutes(protected, s.DB, s.Config)
@@ -142,6 +155,9 @@ func (s *Server) setupRoutes() {
 
 	// Payroll management
 	payroll.RegisterRoutes(protected, s.DB, s.Config)
+
+	// Notifications
+	notifications.RegisterRoutes(protected, s.DB, s.Config)
 }
 
 func customErrorHandler(c *fiber.Ctx, err error) error {

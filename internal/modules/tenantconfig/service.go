@@ -154,6 +154,12 @@ func (s *Service) Update(ctx context.Context, schema string, req *UpdateTenantCo
 	if req.NCFCreditNoteSequence != nil {
 		config.NCFCreditNoteSequence = *req.NCFCreditNoteSequence
 	}
+	if req.NCFGovPrefix != nil {
+		config.NCFGovPrefix = req.NCFGovPrefix
+	}
+	if req.NCFGovSequence != nil {
+		config.NCFGovSequence = *req.NCFGovSequence
+	}
 
 	// Currency fields
 	if req.DefaultCurrency != nil {

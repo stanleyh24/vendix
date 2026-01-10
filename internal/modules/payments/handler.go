@@ -22,6 +22,7 @@ func RegisterRoutes(router fiber.Router, db *database.DB, cfg *config.Config) {
 	payments.Post("/", h.Create)
 	payments.Get("/", h.List)
 	payments.Get("/:id", h.Get)
+	payments.Get("/:id/allocations", h.GetPaymentAllocations)
 	payments.Put("/:id", h.Update)
 	payments.Delete("/:id", h.Delete)
 
@@ -149,4 +150,25 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "Payment deleted successfully"})
+}
+
+// GetPaymentAllocations gets all allocations for a payment
+// @Summary Get payment allocations
+// @Tags payments
+// @Produce json
+// @Param id path string true "Payment ID"
+// @Success 200 {array} PaymentAllocation
+// @Router /api/v1/tenant/payments/{id}/allocations [get]
+func (h *Handler) GetPaymentAllocations(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	id := c.Params("id")
+
+	allocations, err := h.service.GetPaymentAllocations(c.Context(), schema, id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(allocations)
 }

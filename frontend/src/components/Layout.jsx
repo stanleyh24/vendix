@@ -1,19 +1,25 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { 
-  LayoutDashboard, 
-  ShoppingCart, 
+import {
+  LayoutDashboard,
+  ShoppingCart,
   BarChart3,
-  Users, 
-  Package, 
-  Receipt, 
-  FileText, 
+  Users,
+  Package,
+  Receipt,
+  FileText,
+  FileX,
   BookOpen,
   Settings,
   User,
   UserPlus,
-  DollarSign
+  DollarSign,
+  FileBarChart,
+  ShoppingBag,
+  Bell,
+  RotateCcw
 } from 'lucide-react'
+import Notifications from './Notifications'
 
 export default function Layout() {
   const navigate = useNavigate()
@@ -30,10 +36,15 @@ export default function Layout() {
     { name: 'Historial Ventas', href: '/sales-management', icon: BarChart3 },
     { name: 'Clientes', href: '/customers', icon: Users },
     { name: 'Proveedores', href: '/suppliers', icon: Users },
+    { name: 'Compras', href: '/purchases', icon: ShoppingBag },
     { name: 'Inventario', href: '/products', icon: Package },
     { name: 'Gastos', href: '/expenses', icon: Receipt },
     { name: 'Facturación', href: '/invoices', icon: FileText },
+    { name: 'Notas de Crédito', href: '/credit-notes', icon: FileX },
+    { name: 'Devoluciones', href: '/returns', icon: RotateCcw },
     { name: 'Contabilidad', href: '/accounting', icon: BookOpen },
+    { name: 'Reportes', href: '/reports', icon: FileBarChart },
+    { name: 'Notificaciones', href: '/notifications', icon: Bell },
     { name: 'Empleados', href: '/employees', icon: UserPlus },
     { name: 'Nómina', href: '/payroll', icon: DollarSign },
     { name: 'Configuración', href: '/settings', icon: Settings },
@@ -87,6 +98,23 @@ export default function Layout() {
 
       {/* Main content */}
       <div className="pl-64">
+        {/* Header with notifications */}
+        <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
+          <div className="flex-1"></div>
+          <div className="flex items-center gap-4">
+            <Notifications />
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">{user?.email || 'Usuario'}</span>
+              <button
+                onClick={handleLogout}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Cerrar sesión"
+              >
+                <User className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </header>
         <main className="p-8">
           <Outlet />
         </main>

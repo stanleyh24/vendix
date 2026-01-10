@@ -909,7 +909,11 @@ func getTenantMigrations() []Migration {
 					
 					-- Pagos a proveedores
 					('supplier_payment_cash', '1111', 'Caja General', 'Cuenta para pagos a proveedores en efectivo'),
-					('supplier_payment_bank', '1112', 'Banco - Cuenta Corriente', 'Cuenta para pagos a proveedores bancarios')
+					('supplier_payment_bank', '1112', 'Banco - Cuenta Corriente', 'Cuenta para pagos a proveedores bancarios'),
+					
+					-- Devoluciones
+					('sales_return', '4111', 'Devoluciones y Descuentos en Ventas', 'Cuenta para devoluciones de ventas'),
+					('tax_return', '2121', 'ITBIS por Pagar', 'Cuenta para reversión de ITBIS en devoluciones')
 				ON CONFLICT (transaction_type) DO NOTHING;
 			`,
 		},
@@ -925,6 +929,598 @@ func getTenantMigrations() []Migration {
 
 				CREATE INDEX IF NOT EXISTS idx_payments_category ON payments(category);
 				CREATE INDEX IF NOT EXISTS idx_payments_supplier ON payments(supplier);
+			`,
+		},
+		{
+			Version: 32,
+			Name:    "create_purchases_table",
+			SQL: `
+				-- Tabla de órdenes de compra
+				CREATE TABLE IF NOT EXISTS purchases (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					purchase_number VARCHAR(100) UNIQUE NOT NULL,
+					supplier_id UUID NOT NULL REFERENCES suppliers(id),
+					purchase_date DATE NOT NULL,
+					expected_delivery_date DATE,
+					payment_method VARCHAR(50) NOT NULL DEFAULT 'credit',
+					payment_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+					subtotal DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					tax_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					total DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					currency VARCHAR(3) NOT NULL DEFAULT 'DOP',
+					reference VARCHAR(255),
+					notes TEXT,
+					status VARCHAR(50) NOT NULL DEFAULT 'draft',
+					received_at TIMESTAMP,
+					created_by UUID REFERENCES users(id),
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_purchases_supplier_id ON purchases(supplier_id);
+				CREATE INDEX idx_purchases_purchase_date ON purchases(purchase_date);
+				CREATE INDEX idx_purchases_status ON purchases(status);
+				CREATE INDEX idx_purchases_payment_status ON purchases(payment_status);
+				CREATE INDEX idx_purchases_purchase_number ON purchases(purchase_number);
+			`,
+		},
+		{
+			Version: 33,
+			Name:    "create_purchase_lines_table",
+			SQL: `
+				-- Líneas de compra (productos comprados)
+				CREATE TABLE IF NOT EXISTS purchase_lines (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+					product_id UUID REFERENCES products(id),
+					line_number INTEGER NOT NULL,
+					description TEXT NOT NULL,
+					quantity DECIMAL(10, 2) NOT NULL DEFAULT 1,
+					unit_price DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					tax_rate DECIMAL(5, 2) NOT NULL DEFAULT 0,
+					subtotal DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					tax_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					total DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					received_quantity DECIMAL(10, 2) NOT NULL DEFAULT 0,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					UNIQUE(purchase_id, line_number)
+				);
+
+				CREATE INDEX idx_purchase_lines_purchase_id ON purchase_lines(purchase_id);
+				CREATE INDEX idx_purchase_lines_product_id ON purchase_lines(product_id);
+			`,
+		},
+		{
+			Version: 34,
+			Name:    "create_supplier_payments_table",
+			SQL: `
+				-- Pagos a proveedores
+				CREATE TABLE IF NOT EXISTS supplier_payments (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					payment_number VARCHAR(100) UNIQUE NOT NULL,
+					supplier_id UUID NOT NULL REFERENCES suppliers(id),
+					payment_method VARCHAR(50) NOT NULL,
+					payment_date DATE NOT NULL,
+					amount DECIMAL(10, 2) NOT NULL,
+					currency VARCHAR(3) NOT NULL DEFAULT 'DOP',
+					reference VARCHAR(255),
+					notes TEXT,
+					status VARCHAR(50) NOT NULL DEFAULT 'completed',
+					created_by UUID REFERENCES users(id),
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_supplier_payments_supplier_id ON supplier_payments(supplier_id);
+				CREATE INDEX idx_supplier_payments_payment_date ON supplier_payments(payment_date);
+				CREATE INDEX idx_supplier_payments_payment_number ON supplier_payments(payment_number);
+			`,
+		},
+		{
+			Version: 35,
+			Name:    "create_supplier_payment_allocations_table",
+			SQL: `
+				-- Asignación de pagos a compras (similar a payment_allocations para facturas)
+				CREATE TABLE IF NOT EXISTS supplier_payment_allocations (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					supplier_payment_id UUID NOT NULL REFERENCES supplier_payments(id) ON DELETE CASCADE,
+					purchase_id UUID NOT NULL REFERENCES purchases(id),
+					amount DECIMAL(10, 2) NOT NULL,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_supplier_payment_allocations_payment_id ON supplier_payment_allocations(supplier_payment_id);
+				CREATE INDEX idx_supplier_payment_allocations_purchase_id ON supplier_payment_allocations(purchase_id);
+			`,
+		},
+		{
+			Version: 36,
+			Name:    "add_payment_due_date_to_purchases",
+			SQL: `
+				-- Agregar campos para fecha de vencimiento de pago y términos de crédito
+				ALTER TABLE purchases 
+				ADD COLUMN IF NOT EXISTS payment_terms INTEGER DEFAULT 30, -- Días de crédito (default: 30 días)
+				ADD COLUMN IF NOT EXISTS payment_due_date DATE; -- Fecha de vencimiento calculada
+
+				-- Calcular payment_due_date para compras existentes a crédito
+				UPDATE purchases 
+				SET payment_due_date = purchase_date + (payment_terms || ' days')::INTERVAL
+				WHERE payment_method = 'credit' AND payment_due_date IS NULL;
+
+				CREATE INDEX IF NOT EXISTS idx_purchases_payment_due_date ON purchases(payment_due_date);
+			`,
+		},
+		{
+			Version: 37,
+			Name:    "create_notifications_table",
+			SQL: `
+				-- Tabla de notificaciones
+				CREATE TABLE IF NOT EXISTS notifications (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+					type VARCHAR(50) NOT NULL, -- 'purchase_due_soon', 'purchase_overdue', etc.
+					title VARCHAR(255) NOT NULL,
+					message TEXT NOT NULL,
+					entity_type VARCHAR(50), -- 'purchase', 'invoice', etc.
+					entity_id UUID, -- ID de la entidad relacionada
+					priority VARCHAR(20) NOT NULL DEFAULT 'normal', -- 'low', 'normal', 'high', 'urgent'
+					is_read BOOLEAN NOT NULL DEFAULT false,
+					read_at TIMESTAMP,
+					metadata JSONB DEFAULT '{}',
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_notifications_tenant_id ON notifications(tenant_id);
+				CREATE INDEX idx_notifications_type ON notifications(type);
+				CREATE INDEX idx_notifications_is_read ON notifications(is_read);
+				CREATE INDEX idx_notifications_created_at ON notifications(created_at);
+				CREATE INDEX idx_notifications_entity ON notifications(entity_type, entity_id);
+			`,
+		},
+		{
+			Version: 38,
+			Name:    "create_returns_table",
+			SQL: `
+				CREATE TABLE IF NOT EXISTS returns (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					return_number VARCHAR(50) UNIQUE NOT NULL,
+					sale_id UUID REFERENCES sales(id),
+					invoice_id UUID REFERENCES invoices(id),
+					customer_id UUID REFERENCES customers(id),
+					return_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					return_type VARCHAR(20) NOT NULL CHECK (return_type IN ('sale', 'invoice')),
+					return_reason VARCHAR(100),
+					notes TEXT,
+					subtotal DECIMAL(15,2) NOT NULL DEFAULT 0,
+					tax_amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+					total DECIMAL(15,2) NOT NULL DEFAULT 0,
+					status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'completed', 'refunded')),
+					refund_status VARCHAR(20),
+					refund_method VARCHAR(20),
+					refund_amount DECIMAL(15,2) DEFAULT 0,
+					created_by UUID REFERENCES users(id),
+					approved_by UUID REFERENCES users(id),
+					approved_at TIMESTAMP,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_returns_sale_id ON returns(sale_id);
+				CREATE INDEX idx_returns_invoice_id ON returns(invoice_id);
+				CREATE INDEX idx_returns_customer_id ON returns(customer_id);
+				CREATE INDEX idx_returns_status ON returns(status);
+				CREATE INDEX idx_returns_return_date ON returns(return_date);
+				CREATE INDEX idx_returns_return_number ON returns(return_number);
+			`,
+		},
+		{
+			Version: 39,
+			Name:    "create_return_lines_table",
+			SQL: `
+				CREATE TABLE IF NOT EXISTS return_lines (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					return_id UUID NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
+					sale_line_id UUID REFERENCES sale_lines(id),
+					invoice_line_id UUID REFERENCES invoice_lines(id),
+					product_id UUID REFERENCES products(id),
+					line_number INT NOT NULL,
+					description VARCHAR(500) NOT NULL,
+					quantity DECIMAL(10,2) NOT NULL CHECK (quantity > 0),
+					unit_price DECIMAL(15,2) NOT NULL,
+					tax_rate DECIMAL(5,4) NOT NULL DEFAULT 0,
+					tax_amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+					line_total DECIMAL(15,2) NOT NULL,
+					item_condition VARCHAR(20) CHECK (item_condition IN ('new', 'used', 'defective', 'damaged')),
+					restock_quantity DECIMAL(10,2),
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_return_lines_return_id ON return_lines(return_id);
+				CREATE INDEX idx_return_lines_product_id ON return_lines(product_id);
+				CREATE INDEX idx_return_lines_sale_line_id ON return_lines(sale_line_id);
+				CREATE INDEX idx_return_lines_invoice_line_id ON return_lines(invoice_line_id);
+			`,
+		},
+		{
+			Version: 40,
+			Name:    "add_returned_quantity_to_sale_lines",
+			SQL: `
+				ALTER TABLE sale_lines 
+				ADD COLUMN IF NOT EXISTS returned_quantity DECIMAL(10,2) DEFAULT 0;
+
+				ALTER TABLE sale_lines 
+				ADD CONSTRAINT check_returned_quantity 
+				CHECK (returned_quantity >= 0 AND returned_quantity <= quantity);
+			`,
+		},
+		{
+			Version: 41,
+			Name:    "add_returned_quantity_to_invoice_lines",
+			SQL: `
+				ALTER TABLE invoice_lines 
+				ADD COLUMN IF NOT EXISTS returned_quantity DECIMAL(10,2) DEFAULT 0;
+
+				ALTER TABLE invoice_lines 
+				ADD CONSTRAINT check_returned_quantity_invoice 
+				CHECK (returned_quantity >= 0 AND returned_quantity <= quantity);
+			`,
+		},
+		{
+			Version: 42,
+			Name:    "add_is_returnable_to_products",
+			SQL: `
+				ALTER TABLE products 
+				ADD COLUMN IF NOT EXISTS is_returnable BOOLEAN DEFAULT true;
+			`,
+		},
+		{
+			Version: 43,
+			Name:    "create_credit_notes_table",
+			SQL: `
+				-- Migrar tabla credit_notes si existe (v10) o crearla nueva
+				DO $$
+				BEGIN
+					-- Si la tabla NO existe, crearla completa
+					IF NOT EXISTS (
+						SELECT 1 FROM information_schema.tables 
+						WHERE table_schema = current_schema()
+						AND table_name = 'credit_notes'
+					) THEN
+						CREATE TABLE credit_notes (
+							id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+							credit_note_number VARCHAR(50) UNIQUE NOT NULL,
+							ncf VARCHAR(50) UNIQUE,
+							ncf_type VARCHAR(2) NOT NULL DEFAULT '04',
+							original_invoice_id UUID REFERENCES invoices(id),
+							return_id UUID REFERENCES returns(id),
+							customer_id UUID NOT NULL REFERENCES customers(id),
+							issue_date DATE NOT NULL,
+							reason TEXT,
+							status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'pending', 'sent', 'cancelled')),
+							subtotal DECIMAL(15,2) NOT NULL DEFAULT 0,
+							tax_amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+							total DECIMAL(15,2) NOT NULL DEFAULT 0,
+							currency VARCHAR(3) DEFAULT 'DOP',
+							notes TEXT,
+							dgii_status VARCHAR(50),
+							tracking_code VARCHAR(100),
+							signed_at TIMESTAMP,
+							sent_at TIMESTAMP,
+							pdf_url TEXT,
+							xml_url TEXT,
+							created_by UUID REFERENCES users(id),
+							created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+							updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+						);
+					ELSE
+						-- La tabla existe, migrar desde v10
+						-- Renombrar invoice_id a original_invoice_id si existe
+						IF EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'invoice_id'
+						) THEN
+							-- Verificar que original_invoice_id no existe antes de renombrar
+							IF NOT EXISTS (
+								SELECT 1 FROM information_schema.columns 
+								WHERE table_schema = current_schema()
+								AND table_name = 'credit_notes' 
+								AND column_name = 'original_invoice_id'
+							) THEN
+								ALTER TABLE credit_notes RENAME COLUMN invoice_id TO original_invoice_id;
+							END IF;
+						END IF;
+
+						-- Agregar columnas nuevas si no existen
+						IF NOT EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'ncf_type'
+						) THEN
+							ALTER TABLE credit_notes ADD COLUMN ncf_type VARCHAR(2) NOT NULL DEFAULT '04';
+						END IF;
+
+						IF NOT EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'return_id'
+						) THEN
+							ALTER TABLE credit_notes ADD COLUMN return_id UUID REFERENCES returns(id);
+						END IF;
+
+						IF NOT EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'currency'
+						) THEN
+							ALTER TABLE credit_notes ADD COLUMN currency VARCHAR(3) DEFAULT 'DOP';
+						END IF;
+
+						IF NOT EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'tracking_code'
+						) THEN
+							ALTER TABLE credit_notes ADD COLUMN tracking_code VARCHAR(100);
+						END IF;
+
+						IF NOT EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'signed_at'
+						) THEN
+							ALTER TABLE credit_notes ADD COLUMN signed_at TIMESTAMP;
+						END IF;
+
+						IF NOT EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'sent_at'
+						) THEN
+							ALTER TABLE credit_notes ADD COLUMN sent_at TIMESTAMP;
+						END IF;
+
+						IF NOT EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'pdf_url'
+						) THEN
+							ALTER TABLE credit_notes ADD COLUMN pdf_url TEXT;
+						END IF;
+
+						IF NOT EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'xml_url'
+						) THEN
+							ALTER TABLE credit_notes ADD COLUMN xml_url TEXT;
+						END IF;
+
+						-- Modificar precision de decimales si es necesario
+						IF EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'subtotal'
+							AND numeric_precision::text < '15'
+						) THEN
+							ALTER TABLE credit_notes ALTER COLUMN subtotal TYPE DECIMAL(15,2);
+							ALTER TABLE credit_notes ALTER COLUMN tax_amount TYPE DECIMAL(15,2);
+							ALTER TABLE credit_notes ALTER COLUMN total TYPE DECIMAL(15,2);
+						END IF;
+
+						-- Modificar tamaño de credit_note_number si es necesario
+						IF EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'credit_note_number'
+							AND character_maximum_length > 50
+						) THEN
+							ALTER TABLE credit_notes ALTER COLUMN credit_note_number TYPE VARCHAR(50);
+						END IF;
+
+						-- Hacer original_invoice_id nullable si es necesario (puede ser NULL para algunas notas de crédito manuales)
+						IF EXISTS (
+							SELECT 1 FROM information_schema.columns 
+							WHERE table_schema = current_schema()
+							AND table_name = 'credit_notes' 
+							AND column_name = 'original_invoice_id'
+							AND is_nullable = 'NO'
+						) THEN
+							ALTER TABLE credit_notes ALTER COLUMN original_invoice_id DROP NOT NULL;
+						END IF;
+					END IF;
+				END $$;
+
+				-- Crear índices después de asegurar que las columnas existen
+				DO $$
+				BEGIN
+					-- Solo crear índices si las columnas existen
+					IF EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_schema = current_schema()
+						AND table_name = 'credit_notes' 
+						AND column_name = 'original_invoice_id'
+					) THEN
+						CREATE INDEX IF NOT EXISTS idx_credit_notes_invoice_id ON credit_notes(original_invoice_id);
+					END IF;
+
+					IF EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_schema = current_schema()
+						AND table_name = 'credit_notes' 
+						AND column_name = 'return_id'
+					) THEN
+						CREATE INDEX IF NOT EXISTS idx_credit_notes_return_id ON credit_notes(return_id);
+					END IF;
+
+					IF EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_schema = current_schema()
+						AND table_name = 'credit_notes' 
+						AND column_name = 'customer_id'
+					) THEN
+						CREATE INDEX IF NOT EXISTS idx_credit_notes_customer_id ON credit_notes(customer_id);
+					END IF;
+
+					IF EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_schema = current_schema()
+						AND table_name = 'credit_notes' 
+						AND column_name = 'ncf'
+					) THEN
+						CREATE INDEX IF NOT EXISTS idx_credit_notes_ncf ON credit_notes(ncf);
+					END IF;
+
+					IF EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_schema = current_schema()
+						AND table_name = 'credit_notes' 
+						AND column_name = 'status'
+					) THEN
+						CREATE INDEX IF NOT EXISTS idx_credit_notes_status ON credit_notes(status);
+					END IF;
+
+					IF EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_schema = current_schema()
+						AND table_name = 'credit_notes' 
+						AND column_name = 'issue_date'
+					) THEN
+						CREATE INDEX IF NOT EXISTS idx_credit_notes_issue_date ON credit_notes(issue_date);
+					END IF;
+
+					IF EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_schema = current_schema()
+						AND table_name = 'credit_notes' 
+						AND column_name = 'credit_note_number'
+					) THEN
+						CREATE INDEX IF NOT EXISTS idx_credit_notes_credit_note_number ON credit_notes(credit_note_number);
+					END IF;
+
+					-- Eliminar índice antiguo si existe
+					DROP INDEX IF EXISTS credit_notes_invoice_id;
+				END $$;
+			`,
+		},
+		{
+			Version: 44,
+			Name:    "create_credit_note_lines_table",
+			SQL: `
+				CREATE TABLE IF NOT EXISTS credit_note_lines (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					credit_note_id UUID NOT NULL REFERENCES credit_notes(id) ON DELETE CASCADE,
+					original_invoice_line_id UUID REFERENCES invoice_lines(id),
+					product_id UUID REFERENCES products(id),
+					line_number INT NOT NULL,
+					description VARCHAR(500) NOT NULL,
+					quantity DECIMAL(10,2) NOT NULL,
+					unit_price DECIMAL(15,2) NOT NULL,
+					tax_rate DECIMAL(5,4) NOT NULL DEFAULT 0,
+					tax_amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+					line_total DECIMAL(15,2) NOT NULL,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				);
+
+				CREATE INDEX idx_credit_note_lines_credit_note_id ON credit_note_lines(credit_note_id);
+				CREATE INDEX idx_credit_note_lines_product_id ON credit_note_lines(product_id);
+				CREATE INDEX idx_credit_note_lines_invoice_line_id ON credit_note_lines(original_invoice_line_id);
+			`,
+		},
+		{
+			Version: 45,
+			Name:    "add_withholding_fields_and_government_support",
+			SQL: `
+				-- Agregar campos de retención a la tabla invoices
+				DO $$
+				BEGIN
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'invoices' AND column_name = 'withholding_tax_amount') THEN
+						ALTER TABLE invoices ADD COLUMN withholding_tax_amount DECIMAL(15,2);
+					END IF;
+					
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'invoices' AND column_name = 'withholding_tax_type') THEN
+						ALTER TABLE invoices ADD COLUMN withholding_tax_type VARCHAR(10);
+					END IF;
+					
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'invoices' AND column_name = 'withholding_rate') THEN
+						ALTER TABLE invoices ADD COLUMN withholding_rate DECIMAL(5,4);
+					END IF;
+					
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'invoices' AND column_name = 'withholding_exempt') THEN
+						ALTER TABLE invoices ADD COLUMN withholding_exempt BOOLEAN DEFAULT false;
+					END IF;
+					
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'invoices' AND column_name = 'net_amount') THEN
+						ALTER TABLE invoices ADD COLUMN net_amount DECIMAL(15,2);
+					END IF;
+				END $$;
+
+				-- Crear índice para búsquedas por tipo de retención
+				CREATE INDEX IF NOT EXISTS idx_invoices_withholding_tax_type ON invoices(withholding_tax_type);
+
+				-- Actualizar net_amount para facturas existentes (si no hay retención, net_amount = total)
+				UPDATE invoices SET net_amount = total WHERE net_amount IS NULL;
+
+				-- Hacer net_amount NOT NULL después de actualizar (solo si no tiene valores NULL)
+				DO $$
+				BEGIN
+					-- Solo hacer NOT NULL si no hay valores NULL
+					IF NOT EXISTS (SELECT 1 FROM invoices WHERE net_amount IS NULL) THEN
+						ALTER TABLE invoices ALTER COLUMN net_amount SET NOT NULL;
+						ALTER TABLE invoices ALTER COLUMN net_amount SET DEFAULT 0;
+					ELSE
+						-- Si hay valores NULL, actualizarlos primero
+						UPDATE invoices SET net_amount = COALESCE(net_amount, total, 0);
+						ALTER TABLE invoices ALTER COLUMN net_amount SET NOT NULL;
+						ALTER TABLE invoices ALTER COLUMN net_amount SET DEFAULT 0;
+					END IF;
+				END $$;
+
+				-- Agregar campos de entidad gubernamental a customers
+				DO $$
+				BEGIN
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'customers' AND column_name = 'is_government_entity') THEN
+						ALTER TABLE customers ADD COLUMN is_government_entity BOOLEAN DEFAULT false;
+					END IF;
+					
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'customers' AND column_name = 'default_withholding_rate') THEN
+						ALTER TABLE customers ADD COLUMN default_withholding_rate DECIMAL(5,4);
+					END IF;
+				END $$;
+
+				-- Crear índice para búsquedas de clientes gubernamentales
+				CREATE INDEX IF NOT EXISTS idx_customers_is_government_entity ON customers(is_government_entity);
+
+				-- Actualizar validación de ncf_type para incluir tipo 15 (Gubernamental)
+				-- La validación ya está en la aplicación, pero agregamos comentario
+				COMMENT ON COLUMN invoices.ncf_type IS 'Tipo de comprobante fiscal: 01=Crédito Fiscal, 02=Consumidor Final, 15=Gubernamental';
+
+				-- Agregar campos de NCF gubernamental a tenant_config
+				DO $$
+				BEGIN
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'tenant_config' AND column_name = 'ncf_gov_prefix') THEN
+						ALTER TABLE tenant_config ADD COLUMN ncf_gov_prefix VARCHAR(10);
+					END IF;
+					
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'tenant_config' AND column_name = 'ncf_gov_sequence') THEN
+						ALTER TABLE tenant_config ADD COLUMN ncf_gov_sequence INTEGER DEFAULT 1;
+					END IF;
+					
+					IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'tenant_config' AND column_name = 'ncf_gov_end_range') THEN
+						ALTER TABLE tenant_config ADD COLUMN ncf_gov_end_range INTEGER DEFAULT 999999999;
+					END IF;
+				END $$;
 			`,
 		},
 	}

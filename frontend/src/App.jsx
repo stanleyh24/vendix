@@ -9,13 +9,17 @@ import Customers from './pages/Customers'
 import Products from './pages/Products'
 import Expenses from './pages/Expenses'
 import Invoices from './pages/Invoices'
+import CreditNotes from './pages/CreditNotes'
 import Suppliers from './pages/Suppliers'
+import Purchases from './pages/Purchases'
 import Accounting from './pages/Accounting'
 import Reports from './pages/Reports'
+import Returns from './pages/Returns'
 import Settings from './pages/Settings'
 import StyleGuide from './pages/StyleGuide'
 import Employees from './pages/Employees'
 import Payroll from './pages/Payroll'
+import NotificationsPage from './pages/NotificationsPage'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }) {
@@ -39,11 +43,16 @@ function App() {
           <Route path="customers" element={<Customers />} />
           <Route path="products" element={<Products />} />
           <Route path="suppliers" element={<Suppliers />} />
+          <Route path="purchases" element={<Purchases />} />
           <Route path="expenses" element={<Expenses />} />
           <Route path="invoices" element={<Invoices />} />
+          <Route path="credit-notes" element={<CreditNotes />} />
           <Route path="accounting" element={<Accounting />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="returns" element={<Returns />} />
           <Route path="employees" element={<Employees />} />
           <Route path="payroll" element={<Payroll />} />
+          <Route path="notifications" element={<NotificationsPage />} />
           <Route path="settings" element={<Settings />} />
           <Route path="style-guide" element={<StyleGuide />} />
         </Route>

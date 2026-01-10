@@ -29,8 +29,8 @@ func (r *Repository) Create(ctx context.Context, schema string, invoice *Invoice
 
 	// Insert invoice
 	query := fmt.Sprintf(`
-		INSERT INTO %s.invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, terms, pdf_url, xml_url, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		INSERT INTO %s.invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, terms, pdf_url, xml_url, created_by, created_at, updated_at, withholding_tax_amount, withholding_tax_type, withholding_rate, withholding_exempt, net_amount)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
 	`, schema)
 
 	_, err = tx.ExecContext(ctx, query,
@@ -38,6 +38,7 @@ func (r *Repository) Create(ctx context.Context, schema string, invoice *Invoice
 		invoice.IssueDate, invoice.DueDate, invoice.Status, invoice.Subtotal,
 		invoice.TaxAmount, invoice.Total, invoice.PaidAmount, invoice.Currency,
 		invoice.Notes, invoice.Terms, invoice.PDFURL, invoice.XMLURL, invoice.CreatedBy, invoice.CreatedAt, invoice.UpdatedAt,
+		invoice.WithholdingTaxAmount, invoice.WithholdingTaxType, invoice.WithholdingRate, invoice.WithholdingExempt, invoice.NetAmount,
 	)
 	if err != nil {
 		return err
@@ -63,15 +64,17 @@ func (r *Repository) Create(ctx context.Context, schema string, invoice *Invoice
 	return tx.Commit()
 }
 
-func (r *Repository) GetByID(ctx context.Context, schema string, id uuid.UUID) (*Invoice, error) {
+func (r *Repository) GetByID(ctx context.Context, schema string, id uuid.UUID, includes []string) (*Invoice, error) {
 	var invoice Invoice
 	query := fmt.Sprintf(`
 		SELECT i.id, i.invoice_number, i.ncf, i.ncf_type, i.customer_id, i.issue_date, i.due_date, 
 		       i.status, i.subtotal, i.tax_amount, i.total, i.paid_amount, i.currency,
 		       i.notes, i.terms, i.dgii_status, i.signed_at, i.sent_at, i.pdf_url, i.xml_url,
-		       i.created_by, i.created_at, i.updated_at, c.name as customer_name
+		       i.created_by, i.created_at, i.updated_at, 
+		       i.withholding_tax_amount, i.withholding_tax_type, i.withholding_rate, i.withholding_exempt, i.net_amount,
+		       COALESCE(c.name, 'Cliente Genérico') as customer_name
 		FROM %s.invoices i
-		INNER JOIN %s.customers c ON i.customer_id = c.id
+		LEFT JOIN %s.customers c ON i.customer_id = c.id
 		WHERE i.id = $1
 	`, schema, schema)
 
@@ -87,6 +90,15 @@ func (r *Repository) GetByID(ctx context.Context, schema string, id uuid.UUID) (
 	}
 
 	invoice.Lines = lines
+
+	// Load relations if requested
+	if contains(includes, "customer") && invoice.CustomerID != uuid.Nil {
+		customer, err := r.loadCustomer(ctx, schema, invoice.CustomerID)
+		if err == nil && customer != nil {
+			invoice.Customer = customer
+		}
+	}
+
 	return &invoice, nil
 }
 
@@ -103,15 +115,17 @@ func (r *Repository) getInvoiceLines(ctx context.Context, schema string, invoice
 	return lines, err
 }
 
-func (r *Repository) List(ctx context.Context, schema string, status *string) ([]*Invoice, error) {
+func (r *Repository) List(ctx context.Context, schema string, status *string, includes []string) ([]*Invoice, error) {
 	var invoices []*Invoice
 	baseQuery := fmt.Sprintf(`
 		SELECT i.id, i.invoice_number, i.ncf, i.ncf_type, i.customer_id, i.issue_date, i.due_date,
 		       i.status, i.subtotal, i.tax_amount, i.total, i.paid_amount, i.currency,
 		       i.notes, i.terms, i.dgii_status, i.signed_at, i.sent_at, i.pdf_url, i.xml_url,
-		       i.created_by, i.created_at, i.updated_at, c.name as customer_name
+		       i.created_by, i.created_at, i.updated_at,
+		       i.withholding_tax_amount, i.withholding_tax_type, i.withholding_rate, i.withholding_exempt, i.net_amount,
+		       COALESCE(c.name, 'Cliente Genérico') as customer_name
 		FROM %s.invoices i
-		INNER JOIN %s.customers c ON i.customer_id = c.id
+		LEFT JOIN %s.customers c ON i.customer_id = c.id
 		WHERE 1=1
 	`, schema, schema)
 
@@ -138,6 +152,18 @@ func (r *Repository) List(ctx context.Context, schema string, status *string) ([
 			return nil, err
 		}
 		invoices[i].Lines = lines
+	}
+
+	// Load relations if requested (batch loading for efficiency)
+	if contains(includes, "customer") {
+		customerMap, err := r.loadCustomersBatch(ctx, schema, invoices)
+		if err == nil {
+			for i := range invoices {
+				if customer, ok := customerMap[invoices[i].CustomerID]; ok {
+					invoices[i].Customer = customer
+				}
+			}
+		}
 	}
 
 	return invoices, nil
@@ -241,4 +267,143 @@ func (r *Repository) UpdateSignedAt(ctx context.Context, schema string, invoiceI
 
 	_, err := r.db.ExecContext(ctx, query, signedAt, time.Now(), invoiceID)
 	return err
+}
+
+// loadCustomer loads a single customer by ID
+func (r *Repository) loadCustomer(ctx context.Context, schema string, customerID uuid.UUID) (map[string]interface{}, error) {
+	type Customer struct {
+		ID           uuid.UUID `db:"id"`
+		CustomerType string    `db:"customer_type"`
+		TaxID        *string   `db:"tax_id"`
+		Name         string    `db:"name"`
+		Email        *string   `db:"email"`
+		Phone        *string   `db:"phone"`
+		Address      *string   `db:"address"`
+		City         *string   `db:"city"`
+		State        *string   `db:"state"`
+		PostalCode   *string   `db:"postal_code"`
+		Country      *string   `db:"country"`
+		IsActive     bool      `db:"is_active"`
+		CreatedAt    time.Time `db:"created_at"`
+		UpdatedAt    time.Time `db:"updated_at"`
+	}
+
+	var customer Customer
+	query := fmt.Sprintf(`
+		SELECT id, customer_type, tax_id, name, email, phone, address, city, state, postal_code, country, is_active, created_at, updated_at
+		FROM %s.customers
+		WHERE id = $1
+	`, schema)
+
+	err := r.db.GetContext(ctx, &customer, query, customerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"id":            customer.ID.String(),
+		"customer_type": customer.CustomerType,
+		"tax_id":        customer.TaxID,
+		"name":          customer.Name,
+		"email":         customer.Email,
+		"phone":         customer.Phone,
+		"address":       customer.Address,
+		"city":          customer.City,
+		"state":         customer.State,
+		"postal_code":   customer.PostalCode,
+		"country":       customer.Country,
+		"is_active":     customer.IsActive,
+		"created_at":    customer.CreatedAt,
+		"updated_at":    customer.UpdatedAt,
+	}, nil
+}
+
+// loadCustomersBatch loads multiple customers by their IDs (batch loading)
+func (r *Repository) loadCustomersBatch(ctx context.Context, schema string, invoices []*Invoice) (map[uuid.UUID]map[string]interface{}, error) {
+	if len(invoices) == 0 {
+		return make(map[uuid.UUID]map[string]interface{}), nil
+	}
+
+	// Collect unique customer IDs
+	customerIDs := make(map[uuid.UUID]bool)
+	for _, invoice := range invoices {
+		if invoice.CustomerID != uuid.Nil {
+			customerIDs[invoice.CustomerID] = true
+		}
+	}
+
+	if len(customerIDs) == 0 {
+		return make(map[uuid.UUID]map[string]interface{}), nil
+	}
+
+	// Build query with IN clause
+	ids := make([]uuid.UUID, 0, len(customerIDs))
+	for id := range customerIDs {
+		ids = append(ids, id)
+	}
+
+	type Customer struct {
+		ID           uuid.UUID `db:"id"`
+		CustomerType string    `db:"customer_type"`
+		TaxID        *string   `db:"tax_id"`
+		Name         string    `db:"name"`
+		Email        *string   `db:"email"`
+		Phone        *string   `db:"phone"`
+		Address      *string   `db:"address"`
+		City         *string   `db:"city"`
+		State        *string   `db:"state"`
+		PostalCode   *string   `db:"postal_code"`
+		Country      *string   `db:"country"`
+		IsActive     bool      `db:"is_active"`
+		CreatedAt    time.Time `db:"created_at"`
+		UpdatedAt    time.Time `db:"updated_at"`
+	}
+
+	var customers []Customer
+	query := fmt.Sprintf(`
+		SELECT id, customer_type, tax_id, name, email, phone, address, city, state, postal_code, country, is_active, created_at, updated_at
+		FROM %s.customers
+		WHERE id = ANY($1)
+	`, schema)
+
+	err := r.db.SelectContext(ctx, &customers, query, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build map
+	customerMap := make(map[uuid.UUID]map[string]interface{})
+	for _, customer := range customers {
+		customerMap[customer.ID] = map[string]interface{}{
+			"id":            customer.ID.String(),
+			"customer_type": customer.CustomerType,
+			"tax_id":        customer.TaxID,
+			"name":          customer.Name,
+			"email":         customer.Email,
+			"phone":         customer.Phone,
+			"address":       customer.Address,
+			"city":          customer.City,
+			"state":         customer.State,
+			"postal_code":   customer.PostalCode,
+			"country":       customer.Country,
+			"is_active":     customer.IsActive,
+			"created_at":    customer.CreatedAt,
+			"updated_at":    customer.UpdatedAt,
+		}
+	}
+
+	return customerMap, nil
+}
+
+// contains checks if a string slice contains a specific string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

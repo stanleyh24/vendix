@@ -21,6 +21,10 @@ type Customer struct {
 	IsActive     bool      `db:"is_active" json:"is_active"`
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+
+	// Entidad gubernamental y retenciones
+	IsGovernmentEntity   bool     `db:"is_government_entity" json:"is_government_entity"` // si es entidad gubernamental
+	DefaultWithholdingRate *float64 `db:"default_withholding_rate" json:"default_withholding_rate,omitempty"` // tasa de retención por defecto
 }
 
 type CreateCustomerRequest struct {
@@ -34,6 +38,10 @@ type CreateCustomerRequest struct {
 	State        *string `json:"state,omitempty"`
 	PostalCode   *string `json:"postal_code,omitempty"`
 	Country      *string `json:"country,omitempty"`
+	
+	// Entidad gubernamental
+	IsGovernmentEntity   *bool    `json:"is_government_entity,omitempty"`
+	DefaultWithholdingRate *float64 `json:"default_withholding_rate,omitempty"`
 }
 
 type UpdateCustomerRequest struct {
@@ -45,6 +53,10 @@ type UpdateCustomerRequest struct {
 	State      *string `json:"state,omitempty"`
 	PostalCode *string `json:"postal_code,omitempty"`
 	IsActive   *bool   `json:"is_active,omitempty"`
+	
+	// Entidad gubernamental
+	IsGovernmentEntity   *bool    `json:"is_government_entity,omitempty"`
+	DefaultWithholdingRate *float64 `json:"default_withholding_rate,omitempty"`
 }
 
 type CustomerResponse struct {
@@ -62,23 +74,29 @@ type CustomerResponse struct {
 	IsActive     bool      `json:"is_active"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+	
+	// Entidad gubernamental
+	IsGovernmentEntity   bool     `json:"is_government_entity"`
+	DefaultWithholdingRate *float64 `json:"default_withholding_rate,omitempty"`
 }
 
 func (c *Customer) ToResponse() *CustomerResponse {
 	return &CustomerResponse{
-		ID:           c.ID.String(),
-		CustomerType: c.CustomerType,
-		TaxID:        c.TaxID,
-		Name:         c.Name,
-		Email:        c.Email,
-		Phone:        c.Phone,
-		Address:      c.Address,
-		City:         c.City,
-		State:        c.State,
-		PostalCode:   c.PostalCode,
-		Country:      c.Country,
-		IsActive:     c.IsActive,
-		CreatedAt:    c.CreatedAt,
-		UpdatedAt:    c.UpdatedAt,
+		ID:                    c.ID.String(),
+		CustomerType:          c.CustomerType,
+		TaxID:                 c.TaxID,
+		Name:                  c.Name,
+		Email:                 c.Email,
+		Phone:                 c.Phone,
+		Address:               c.Address,
+		City:                  c.City,
+		State:                 c.State,
+		PostalCode:            c.PostalCode,
+		Country:               c.Country,
+		IsActive:              c.IsActive,
+		CreatedAt:             c.CreatedAt,
+		UpdatedAt:             c.UpdatedAt,
+		IsGovernmentEntity:    c.IsGovernmentEntity,
+		DefaultWithholdingRate: c.DefaultWithholdingRate,
 	}
 }

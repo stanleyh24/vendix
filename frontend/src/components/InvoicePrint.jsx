@@ -23,7 +23,8 @@ export default function InvoicePrint({ invoiceId, onClose }) {
   const loadInvoice = async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/invoices/${invoiceId}`);
+      // Include customer information in the request
+      const response = await api.get(`/invoices/${invoiceId}?include=customer`);
       setInvoice(response.data);
     } catch (error) {
       showAlert('error', 'Error', 'No se pudo cargar la factura');
@@ -173,14 +174,26 @@ export default function InvoicePrint({ invoiceId, onClose }) {
                 <div className="text-xs">NCF: {invoice.ncf}</div>
               )}
               <div className="text-xs mt-1">
-                {invoice.ncf_type === '01' ? 'Crédito Fiscal' : 'Consumidor Final'}
+                {invoice.ncf_type === '01' ? 'Crédito Fiscal' : 
+                 invoice.ncf_type === '15' ? 'Gubernamental' : 
+                 'Consumidor Final'}
               </div>
+              {invoice.ncf_type === '15' && (
+                <div className="text-xs text-blue-600 font-semibold mt-1">🏛️ Factura Gubernamental</div>
+              )}
             </div>
 
             {/* Cliente compacto */}
             <div className="border-b-2 border-dashed border-gray-300 pb-2 mb-2">
               <div className="text-xs font-bold uppercase">Cliente:</div>
-              <div className="text-xs">{invoice.customer_name || 'Cliente Genérico'}</div>
+              <div className="text-xs">
+                {invoice.customer && typeof invoice.customer === 'object' 
+                  ? (invoice.customer.name || invoice.customer_name || 'Cliente Genérico')
+                  : (invoice.customer_name || 'Cliente Genérico')}
+              </div>
+              {invoice.customer && typeof invoice.customer === 'object' && invoice.customer.tax_id && (
+                <div className="text-xs text-gray-600">RNC: {invoice.customer.tax_id}</div>
+              )}
             </div>
 
             {/* Fecha compacta */}
@@ -224,6 +237,30 @@ export default function InvoicePrint({ invoiceId, onClose }) {
                 <span>TOTAL:</span>
                 <span>{formatCurrency(invoice.total)}</span>
               </div>
+              {/* Mostrar retención si existe */}
+              {invoice.withholding_tax_amount && invoice.withholding_tax_amount > 0 && (
+                <>
+                  <div className="flex justify-between text-xs pt-1 border-t border-gray-300">
+                    <span className="flex items-center gap-1">
+                      Retención ISR
+                      {invoice.withholding_rate && (
+                        <span className="text-gray-500">
+                          ({(invoice.withholding_rate * 100).toFixed(2)}%)
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-red-600 font-semibold">
+                      -{formatCurrency(invoice.withholding_tax_amount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between font-bold text-sm border-t-2 border-gray-400 pt-1">
+                    <span>MONTO NETO A RECIBIR:</span>
+                    <span className="text-green-600">
+                      {formatCurrency(invoice.net_amount || (invoice.total - invoice.withholding_tax_amount))}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Notas compactas si existen */}

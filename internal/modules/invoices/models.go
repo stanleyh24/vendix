@@ -11,7 +11,7 @@ type Invoice struct {
 	ID            uuid.UUID  `db:"id" json:"id"`
 	InvoiceNumber string     `db:"invoice_number" json:"invoice_number"`
 	NCF           *string    `db:"ncf" json:"ncf,omitempty"`
-	NCFType       string     `db:"ncf_type" json:"ncf_type"` // 01=Crédito Fiscal, 02=Consumidor Final
+	NCFType       string     `db:"ncf_type" json:"ncf_type"` // 01=Crédito Fiscal, 02=Consumidor Final, 15=Gubernamental
 	CustomerID    uuid.UUID  `db:"customer_id" json:"customer_id"`
 	IssueDate     time.Time  `db:"issue_date" json:"issue_date"`
 	DueDate       time.Time  `db:"due_date" json:"due_date"`
@@ -32,9 +32,17 @@ type Invoice struct {
 	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
 
+	// Retención fiscal (withholding)
+	WithholdingTaxAmount *float64 `db:"withholding_tax_amount" json:"withholding_tax_amount,omitempty"`
+	WithholdingTaxType   *string  `db:"withholding_tax_type" json:"withholding_tax_type,omitempty"` // 'isr', 'itbis'
+	WithholdingRate      *float64 `db:"withholding_rate" json:"withholding_rate,omitempty"`
+	WithholdingExempt    bool     `db:"withholding_exempt" json:"withholding_exempt"`
+	NetAmount            float64  `db:"net_amount" json:"net_amount"` // total - withholding_tax_amount
+
 	// Relations
 	Lines        []InvoiceLine `json:"lines,omitempty"`
 	CustomerName string        `db:"customer_name" json:"customer_name,omitempty"`
+	Customer     interface{}   `json:"customer,omitempty"` // Populated when include=customer
 }
 
 // InvoiceLine represents a line item in an invoice
@@ -77,13 +85,18 @@ func (s InvoiceStatus) IsValid() bool {
 // CreateInvoiceRequest represents the request to create an invoice
 type CreateInvoiceRequest struct {
 	CustomerID *uuid.UUID             `json:"customer_id,omitempty"` // Opcional - si no se envía, usa cliente genérico
-	NCFType    string                 `json:"ncf_type"`              // 01=Crédito Fiscal, 02=Consumidor Final (default: 02)
+	NCFType    string                 `json:"ncf_type"`              // 01=Crédito Fiscal, 02=Consumidor Final, 15=Gubernamental (default: 02)
 	IssueDate  string                 `json:"issue_date" validate:"required"`
 	DueDate    string                 `json:"due_date" validate:"required"`
 	Status     *string                `json:"status,omitempty"` // Opcional - si no se envía, usa 'draft' por defecto
 	Notes      *string                `json:"notes,omitempty"`
 	Terms      *string                `json:"terms,omitempty"`
 	Lines      []CreateInvoiceLineReq `json:"lines" validate:"required,min=1"`
+	
+	// Retención fiscal
+	WithholdingTaxType *string  `json:"withholding_tax_type,omitempty"` // 'isr', 'itbis'
+	WithholdingRate    *float64 `json:"withholding_rate,omitempty"`     // ej: 0.05 para 5%
+	WithholdingExempt  *bool    `json:"withholding_exempt,omitempty"`   // si está exento de retenciones
 }
 
 // CreateInvoiceLineReq represents a line item in the create request

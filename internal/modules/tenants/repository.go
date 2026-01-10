@@ -75,6 +75,20 @@ func (r *Repository) List(ctx context.Context) ([]*Tenant, error) {
 	return tenants, err
 }
 
+// ListActive returns only active tenants
+func (r *Repository) ListActive(ctx context.Context) ([]*Tenant, error) {
+	var tenants []*Tenant
+	query := `
+		SELECT id, name, slug, schema_name, domain, status, plan_id, created_at, updated_at
+		FROM public.tenants
+		WHERE deleted_at IS NULL AND status = 'active'
+		ORDER BY created_at DESC
+	`
+
+	err := r.db.SelectContext(ctx, &tenants, query)
+	return tenants, err
+}
+
 func (r *Repository) Update(ctx context.Context, tenant *Tenant) error {
 	query := `
 		UPDATE public.tenants

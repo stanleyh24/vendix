@@ -53,6 +53,11 @@ func RegisterRoutes(router fiber.Router, db *database.DB, cfg *config.Config) {
 	// Payment and Expense Journal Entries
 	accounting.Post("/journal-entries/payment/:id", h.GeneratePaymentJournalEntry)
 	accounting.Post("/journal-entries/expense/:id", h.GenerateExpenseJournalEntry)
+
+	// Accounts Payable
+	accounting.Get("/accounts-payable/balance", h.GetAccountsPayableBalance)
+	accounting.Get("/accounts-payable/summary", h.GetAccountsPayableSummary)
+	accounting.Post("/accounts-payable/recalculate", h.RecalculateAccountsPayableBalance)
 }
 
 // Chart of Accounts handlers
@@ -609,4 +614,64 @@ func (h *Handler) GenerateExpenseJournalEntry(c *fiber.Ctx) error {
 	}
 	
 	return c.Status(fiber.StatusCreated).JSON(entry)
+}
+
+// GetAccountsPayableBalance gets the current accounts payable balance
+// @Summary Get accounts payable balance
+// @Tags accounting
+// @Produce json
+// @Success 200 {object} map[string]float64
+// @Router /api/v1/tenant/accounting/accounts-payable/balance [get]
+func (h *Handler) GetAccountsPayableBalance(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+
+	balance, err := h.service.GetAccountsPayableBalance(c.Context(), schema)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"balance": balance,
+	})
+}
+
+// GetAccountsPayableSummary gets a summary of accounts payable
+// @Summary Get accounts payable summary
+// @Tags accounting
+// @Produce json
+// @Success 200 {object} AccountsPayableSummary
+// @Router /api/v1/tenant/accounting/accounts-payable/summary [get]
+func (h *Handler) GetAccountsPayableSummary(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+
+	summary, err := h.service.GetAccountsPayableSummary(c.Context(), schema)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(summary)
+}
+
+// RecalculateAccountsPayableBalance recalculates the accounts payable balance
+// @Summary Recalculate accounts payable balance
+// @Tags accounting
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Router /api/v1/tenant/accounting/accounts-payable/recalculate [post]
+func (h *Handler) RecalculateAccountsPayableBalance(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+
+	if err := h.service.RecalculateAccountsPayableBalance(c.Context(), schema); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Accounts payable balance recalculated successfully",
+	})
 }

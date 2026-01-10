@@ -29,7 +29,9 @@ func (r *Repository) Get(ctx context.Context, schema string) (*TenantConfig, err
 			invoice_next_number, invoice_terms, invoice_footer, payment_terms_days,
 			ncf_fiscal_credit_prefix, ncf_fiscal_credit_sequence, ncf_consumer_prefix,
 			ncf_consumer_sequence, ncf_debit_note_prefix, ncf_debit_note_sequence,
-			ncf_credit_note_prefix, ncf_credit_note_sequence, default_currency,
+			ncf_credit_note_prefix, ncf_credit_note_sequence, 
+			ncf_gov_prefix, ncf_gov_sequence, ncf_gov_end_range,
+			default_currency,
 			default_tax_rate, notification_email, send_invoice_emails, 
 			send_payment_reminders, logo_url, primary_color, secondary_color,
 			timezone, date_format, time_format, locale, created_at, updated_at
@@ -69,6 +71,8 @@ func (r *Repository) Create(ctx context.Context, schema string) (*TenantConfig, 
 		NCFConsumerSequence:     1,
 		NCFDebitNoteSequence:    1,
 		NCFCreditNoteSequence:   1,
+		NCFGovSequence:          1,
+		NCFGovEndRange:          999999999,
 	}
 
 	query := fmt.Sprintf(`
@@ -77,11 +81,12 @@ func (r *Repository) Create(ctx context.Context, schema string) (*TenantConfig, 
 			invoice_prefix, invoice_next_number, payment_terms_days,
 			ncf_fiscal_credit_sequence, ncf_consumer_sequence,
 			ncf_debit_note_sequence, ncf_credit_note_sequence,
+			ncf_gov_sequence, ncf_gov_end_range,
 			default_currency, default_tax_rate, send_invoice_emails,
 			send_payment_reminders, primary_color, secondary_color,
 			timezone, date_format, time_format, locale
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
 		RETURNING id, created_at, updated_at
 	`, schema)
 
@@ -97,6 +102,8 @@ func (r *Repository) Create(ctx context.Context, schema string) (*TenantConfig, 
 		config.NCFConsumerSequence,
 		config.NCFDebitNoteSequence,
 		config.NCFCreditNoteSequence,
+		config.NCFGovSequence,
+		config.NCFGovEndRange,
 		config.DefaultCurrency,
 		config.DefaultTaxRate,
 		config.SendInvoiceEmails,
@@ -152,20 +159,23 @@ func (r *Repository) Update(ctx context.Context, schema string, config *TenantCo
 			ncf_debit_note_sequence = $29,
 			ncf_credit_note_prefix = $30,
 			ncf_credit_note_sequence = $31,
-			default_currency = $32,
-			default_tax_rate = $33,
-			notification_email = $34,
-			send_invoice_emails = $35,
-			send_payment_reminders = $36,
-			logo_url = $37,
-			primary_color = $38,
-			secondary_color = $39,
-			timezone = $40,
-			date_format = $41,
-			time_format = $42,
-			locale = $43,
-			updated_at = $44
-		WHERE id = $45
+			ncf_gov_prefix = $32,
+			ncf_gov_sequence = $33,
+			ncf_gov_end_range = $34,
+			default_currency = $35,
+			default_tax_rate = $36,
+			notification_email = $37,
+			send_invoice_emails = $38,
+			send_payment_reminders = $39,
+			logo_url = $40,
+			primary_color = $41,
+			secondary_color = $42,
+			timezone = $43,
+			date_format = $44,
+			time_format = $45,
+			locale = $46,
+			updated_at = $47
+		WHERE id = $48
 	`, schema)
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -200,6 +210,9 @@ func (r *Repository) Update(ctx context.Context, schema string, config *TenantCo
 		config.NCFDebitNoteSequence,
 		config.NCFCreditNotePrefix,
 		config.NCFCreditNoteSequence,
+		config.NCFGovPrefix,
+		config.NCFGovSequence,
+		config.NCFGovEndRange,
 		config.DefaultCurrency,
 		config.DefaultTaxRate,
 		config.NotificationEmail,

@@ -8,19 +8,22 @@ import (
 	"vendix/internal/config"
 	"vendix/internal/database"
 	"vendix/internal/logger"
+	"vendix/internal/modules/invoices"
 
 	"github.com/google/uuid"
 )
 
 type Service struct {
-	repo *Repository
-	cfg  *config.Config
+	repo         *Repository
+	invoicesRepo *invoices.Repository
+	cfg          *config.Config
 }
 
 func NewService(db *database.DB, cfg *config.Config) *Service {
 	return &Service{
-		repo: NewRepository(db),
-		cfg:  cfg,
+		repo:         NewRepository(db),
+		invoicesRepo: invoices.NewRepository(db),
+		cfg:          cfg,
 	}
 }
 
@@ -143,4 +146,13 @@ func (s *Service) Delete(ctx context.Context, schema string, id string) error {
 
 	logger.Info("Payment deleted", "id", id)
 	return nil
+}
+
+// GetPaymentAllocations gets all allocations for a payment
+func (s *Service) GetPaymentAllocations(ctx context.Context, schema string, paymentID string) ([]*invoices.PaymentAllocation, error) {
+	id, err := uuid.Parse(paymentID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid payment ID: %w", err)
+	}
+	return s.invoicesRepo.GetAllocationsByPayment(ctx, schema, id)
 }

@@ -8,6 +8,12 @@ SET search_path TO tenant_demo;
 DELETE FROM payroll_entries;
 DELETE FROM payroll_periods;
 DELETE FROM employees;
+DELETE FROM credit_note_lines;
+DELETE FROM credit_notes;
+DELETE FROM return_lines;
+DELETE FROM returns;
+DELETE FROM purchase_lines;
+DELETE FROM purchases;
 DELETE FROM invoice_lines;
 DELETE FROM invoices;
 DELETE FROM payment_allocations;
@@ -486,28 +492,6 @@ VALUES
   (gen_random_uuid(), 'Servicios de Limpieza CleanPro', '1-32-000003', 'info@cleanpro.do', '809-555-1003', 'Calle Máximo Gómez #45', 'Santo Domingo', 'DN', '10112', 'DO', true, NOW(), NOW()),
   (gen_random_uuid(), 'Redes y Telecom SRL', '1-33-000004', 'soporte@redestelecom.do', '809-555-1004', 'Av. Sarasota #350', 'Santo Domingo', 'DN', '10148', 'DO', true, NOW(), NOW());
 
--- Capturar IDs de proveedores para asociarlos a productos
-DO $$
-DECLARE
-  prov_oficina UUID;
-  prov_tecnologia UUID;
-  prov_limpieza UUID;
-  prov_telecom UUID;
-BEGIN
-  SELECT id INTO prov_oficina FROM suppliers WHERE name = 'Suministros Oficina SRL' LIMIT 1;
-  SELECT id INTO prov_tecnologia FROM suppliers WHERE name = 'Tecnología Caribe SAS' LIMIT 1;
-  SELECT id INTO prov_limpieza FROM suppliers WHERE name = 'Servicios de Limpieza CleanPro' LIMIT 1;
-  SELECT id INTO prov_telecom FROM suppliers WHERE name = 'Redes y Telecom SRL' LIMIT 1;
-
-  -- Asociaciones por categoría de producto (por código)
-  UPDATE products SET supplier_id = prov_tecnologia WHERE code LIKE 'LAPTOP-%' OR code IN ('MONITOR-001','MOUSE-001','KEYBOARD-001');
-  UPDATE products SET supplier_id = prov_oficina   WHERE code IN ('PAPER-001','PEN-001','FOLDER-001');
-  UPDATE products SET supplier_id = prov_tecnologia WHERE code IN ('SERV-002'); -- desarrollo web
-  UPDATE products SET supplier_id = prov_telecom   WHERE code IN ('SERV-003'); -- soporte técnico
-  UPDATE products SET supplier_id = prov_oficina   WHERE code IN ('SERV-001'); -- consultoría (genérica)
-  UPDATE products SET supplier_id = prov_oficina   WHERE code IN ('FOOD-001','FOOD-002');
-END $$;
-
 -- ====================
 -- PRODUCTOS
 -- ====================
@@ -534,6 +518,28 @@ VALUES
   -- Alimentos
   (gen_random_uuid(), 'FOOD-001', 'Café Premium (Libra)', 'Café dominicano de montaña', 'product', 'lb', 450.00, 280.00, 0.18, true, NOW(), NOW()),
   (gen_random_uuid(), 'FOOD-002', 'Galletas Surtidas', 'Paquete de galletas variadas', 'product', 'unit', 185.00, 120.00, 0.18, true, NOW(), NOW());
+
+-- Asociar proveedores a productos
+DO $$
+DECLARE
+  prov_oficina UUID;
+  prov_tecnologia UUID;
+  prov_limpieza UUID;
+  prov_telecom UUID;
+BEGIN
+  SELECT id INTO prov_oficina FROM suppliers WHERE name = 'Suministros Oficina SRL' LIMIT 1;
+  SELECT id INTO prov_tecnologia FROM suppliers WHERE name = 'Tecnología Caribe SAS' LIMIT 1;
+  SELECT id INTO prov_limpieza FROM suppliers WHERE name = 'Servicios de Limpieza CleanPro' LIMIT 1;
+  SELECT id INTO prov_telecom FROM suppliers WHERE name = 'Redes y Telecom SRL' LIMIT 1;
+
+  -- Asociaciones por categoría de producto (por código)
+  UPDATE products SET supplier_id = prov_tecnologia WHERE code LIKE 'LAPTOP-%' OR code IN ('MONITOR-001','MOUSE-001','KEYBOARD-001');
+  UPDATE products SET supplier_id = prov_oficina   WHERE code IN ('PAPER-001','PEN-001','FOLDER-001');
+  UPDATE products SET supplier_id = prov_tecnologia WHERE code IN ('SERV-002'); -- desarrollo web
+  UPDATE products SET supplier_id = prov_telecom   WHERE code IN ('SERV-003'); -- soporte técnico
+  UPDATE products SET supplier_id = prov_oficina   WHERE code IN ('SERV-001'); -- consultoría (genérica)
+  UPDATE products SET supplier_id = prov_oficina   WHERE code IN ('FOOD-001','FOOD-002');
+END $$;
 
 -- ====================
 -- FACTURAS CON LÍNEAS
@@ -586,9 +592,9 @@ BEGIN
   
   -- FACTURA 1: Laptop + Mouse (PAGADA)
   factura1_id := gen_random_uuid();
-  INSERT INTO invoices (id, invoice_number, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, created_at, updated_at)
+  INSERT INTO invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, created_at, updated_at)
   VALUES (
-    factura1_id, 'INV-00000001', cliente1_id, 
+    factura1_id, 'INV-00000001', 'B0201000000000001', '02', cliente1_id, 
     CURRENT_DATE - INTERVAL '30 days', CURRENT_DATE - INTERVAL '0 days',
     'paid', 154500.00, 27810.00, 182310.00, 182310.00, 'DOP',
     'Equipo de trabajo para oficina', NOW() - INTERVAL '30 days', NOW()
@@ -599,11 +605,11 @@ BEGIN
     (gen_random_uuid(), factura1_id, laptop_dell_id, 1, 'Laptop Dell XPS 15', 2, 75000.00, 0.18, 27000.00, 177000.00, NOW() - INTERVAL '30 days'),
     (gen_random_uuid(), factura1_id, mouse_id, 2, 'Mouse Logitech MX Master', 1, 4500.00, 0.18, 810.00, 5310.00, NOW() - INTERVAL '30 days');
   
-  -- FACTURA 2: Servicios de consultoría (ENVIADA)
+  -- FACTURA 2: Servicios de consultoría (ENVIADA) - Esta tendrá una devolución con nota de crédito
   factura2_id := gen_random_uuid();
-  INSERT INTO invoices (id, invoice_number, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, sent_at, created_at, updated_at)
+  INSERT INTO invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, sent_at, created_at, updated_at)
   VALUES (
-    factura2_id, 'INV-00000002', cliente2_id,
+    factura2_id, 'INV-00000002', 'B0101000000000001', '01', cliente2_id,
     CURRENT_DATE - INTERVAL '15 days', CURRENT_DATE + INTERVAL '15 days',
     'sent', 35000.00, 6300.00, 41300.00, 0.00, 'DOP',
     'Servicios de consultoría IT - Octubre 2025',
@@ -615,11 +621,11 @@ BEGIN
   VALUES
     (gen_random_uuid(), factura2_id, consulta_id, 1, 'Consultoría IT', 10, 3500.00, 0.18, 6300.00, 41300.00, NOW() - INTERVAL '15 days');
   
-  -- FACTURA 3: Desarrollo web (PENDIENTE)
+  -- FACTURA 3: Desarrollo web (PENDIENTE) - Esta tendrá una devolución pendiente
   factura3_id := gen_random_uuid();
-  INSERT INTO invoices (id, invoice_number, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, created_at, updated_at)
+  INSERT INTO invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, created_at, updated_at)
   VALUES (
-    factura3_id, 'INV-00000003', cliente3_id,
+    factura3_id, 'INV-00000003', 'B0101000000000002', '01', cliente3_id,
     CURRENT_DATE - INTERVAL '10 days', CURRENT_DATE + INTERVAL '20 days',
     'pending', 85000.00, 15300.00, 100300.00, 0.00, 'DOP',
     'Desarrollo de sitio web corporativo', NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days'
@@ -629,11 +635,11 @@ BEGIN
   VALUES
     (gen_random_uuid(), factura3_id, desarrollo_id, 1, 'Desarrollo Web Corporativo', 1, 85000.00, 0.18, 15300.00, 100300.00, NOW() - INTERVAL '10 days');
   
-  -- FACTURA 4: Monitor (PAGADA)
+  -- FACTURA 4: Monitor (PAGADA) - Esta tendrá una devolución completada
   factura4_id := gen_random_uuid();
-  INSERT INTO invoices (id, invoice_number, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, created_at, updated_at)
+  INSERT INTO invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, created_at, updated_at)
   VALUES (
-    factura4_id, 'INV-00000004', cliente4_id,
+    factura4_id, 'INV-00000004', 'B0201000000000002', '02', cliente4_id,
     CURRENT_DATE - INTERVAL '5 days', CURRENT_DATE + INTERVAL '25 days',
     'paid', 18000.00, 3240.00, 21240.00, 21240.00, 'DOP',
     NOW() - INTERVAL '5 days', NOW() - INTERVAL '3 days'
@@ -645,9 +651,9 @@ BEGIN
   
   -- FACTURA 5: Equipos de oficina (PENDIENTE)
   factura5_id := gen_random_uuid();
-  INSERT INTO invoices (id, invoice_number, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, created_at, updated_at)
+  INSERT INTO invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, created_at, updated_at)
   VALUES (
-    factura5_id, 'INV-00000005', cliente5_id,
+    factura5_id, 'INV-00000005', 'B0101000000000003', '01', cliente5_id,
     CURRENT_DATE - INTERVAL '3 days', CURRENT_DATE + INTERVAL '27 days',
     'pending', 56000.00, 10080.00, 66080.00, 0.00, 'DOP',
     NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'
@@ -660,9 +666,9 @@ BEGIN
   
   -- FACTURA 6: Soporte técnico (BORRADOR)
   factura6_id := gen_random_uuid();
-  INSERT INTO invoices (id, invoice_number, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, created_at, updated_at)
+  INSERT INTO invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, created_at, updated_at)
   VALUES (
-    factura6_id, 'INV-00000006', cliente2_id,
+    factura6_id, 'INV-00000006', NULL, '02', cliente2_id,
     CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days',
     'draft', 15000.00, 2700.00, 17700.00, 0.00, 'DOP',
     NOW(), NOW()
@@ -674,9 +680,9 @@ BEGIN
   
   -- FACTURA 7: Laptop (ANULADA)
   factura7_id := gen_random_uuid();
-  INSERT INTO invoices (id, invoice_number, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, created_at, updated_at)
+  INSERT INTO invoices (id, invoice_number, ncf, ncf_type, customer_id, issue_date, due_date, status, subtotal, tax_amount, total, paid_amount, currency, notes, created_at, updated_at)
   VALUES (
-    factura7_id, 'INV-00000007', cliente1_id,
+    factura7_id, 'INV-00000007', 'B0201000000000003', '02', cliente1_id,
     CURRENT_DATE - INTERVAL '20 days', CURRENT_DATE - INTERVAL '10 days',
     'cancelled', 75000.00, 13500.00, 88500.00, 0.00, 'DOP',
     'Factura anulada por error en especificaciones',
@@ -707,6 +713,478 @@ BEGIN
 
 END $$;
 
+-- ====================
+-- COMPRAS (PURCHASES)
+-- ====================
+
+DO $$
+DECLARE
+    prov_oficina_id UUID;
+    prov_tecnologia_id UUID;
+    prov_telecom_id UUID;
+    
+    -- IDs de productos para líneas de compra
+    laptop_dell_prod_id UUID;
+    laptop_hp_prod_id UUID;
+    monitor_prod_id UUID;
+    mouse_prod_id UUID;
+    teclado_prod_id UUID;
+    resma_prod_id UUID;
+    pen_prod_id UUID;
+    folder_prod_id UUID;
+    
+    -- IDs de compras
+    compra1_id UUID;
+    compra2_id UUID;
+    compra3_id UUID;
+    compra4_id UUID;
+    compra5_id UUID;
+    
+    -- Variables para cálculos
+    line_subtotal NUMERIC;
+    line_tax NUMERIC;
+    line_total NUMERIC;
+    purchase_subtotal NUMERIC;
+    purchase_tax NUMERIC;
+    purchase_total NUMERIC;
+  BEGIN
+    -- Obtener IDs de proveedores
+    SELECT id INTO prov_oficina_id FROM suppliers WHERE name = 'Suministros Oficina SRL' LIMIT 1;
+    SELECT id INTO prov_tecnologia_id FROM suppliers WHERE name = 'Tecnología Caribe SAS' LIMIT 1;
+    SELECT id INTO prov_telecom_id FROM suppliers WHERE name = 'Redes y Telecom SRL' LIMIT 1;
+    
+    -- Obtener IDs de productos
+    SELECT id INTO laptop_dell_prod_id FROM products WHERE code = 'LAPTOP-001' LIMIT 1;
+    SELECT id INTO laptop_hp_prod_id FROM products WHERE code = 'LAPTOP-002' LIMIT 1;
+    SELECT id INTO monitor_prod_id FROM products WHERE code = 'MONITOR-001' LIMIT 1;
+    SELECT id INTO mouse_prod_id FROM products WHERE code = 'MOUSE-001' LIMIT 1;
+    SELECT id INTO teclado_prod_id FROM products WHERE code = 'KEYBOARD-001' LIMIT 1;
+    SELECT id INTO resma_prod_id FROM products WHERE code = 'PAPER-001' LIMIT 1;
+    SELECT id INTO pen_prod_id FROM products WHERE code = 'PEN-001' LIMIT 1;
+    SELECT id INTO folder_prod_id FROM products WHERE code = 'FOLDER-001' LIMIT 1;
+    
+    -- COMPRA 1: Equipos de tecnología (RECIBIDA - A CRÉDITO)
+    compra1_id := gen_random_uuid();
+    purchase_subtotal := 0;
+    purchase_tax := 0;
+    
+    -- Calcular totales de líneas
+    -- Línea 1: Laptop Dell
+    line_subtotal := 2 * 60000.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    -- Línea 2: Monitor
+    line_subtotal := 3 * 14000.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    purchase_total := purchase_subtotal + purchase_tax;
+    
+    -- Insertar compra primero
+    INSERT INTO purchases (id, purchase_number, supplier_id, purchase_date, expected_delivery_date, payment_method, payment_status, subtotal, tax_amount, total, currency, reference, notes, status, received_at, created_at, updated_at)
+    VALUES (
+      compra1_id, 'PUR-000001', prov_tecnologia_id,
+      CURRENT_DATE - INTERVAL '45 days', CURRENT_DATE - INTERVAL '40 days',
+      'credit', 'pending',
+      purchase_subtotal, purchase_tax, purchase_total, 'DOP',
+      'FAC-TEC-2025-001', 'Compra de equipos para nueva oficina',
+      'received', NOW() - INTERVAL '40 days',
+      NOW() - INTERVAL '45 days', NOW() - INTERVAL '40 days'
+    );
+    
+    -- Insertar líneas después
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra1_id, laptop_dell_prod_id, 1, 'Laptop Dell XPS 15', 2, 60000.00, 18, 120000.00, 21600.00, 141600.00, 2, NOW() - INTERVAL '45 days');
+    
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra1_id, monitor_prod_id, 2, 'Monitor LG 27"', 3, 14000.00, 18, 42000.00, 7560.00, 49560.00, 3, NOW() - INTERVAL '45 days');
+    
+    -- COMPRA 2: Suministros de oficina (RECIBIDA - EFECTIVO)
+    compra2_id := gen_random_uuid();
+    purchase_subtotal := 0;
+    purchase_tax := 0;
+    
+    -- Calcular totales de líneas
+    -- Línea 1: Resmas de papel
+    line_subtotal := 20 * 250.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    -- Línea 2: Bolígrafos
+    line_subtotal := 10 * 300.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    -- Línea 3: Folders
+    line_subtotal := 15 * 180.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    purchase_total := purchase_subtotal + purchase_tax;
+    
+    -- Insertar compra primero
+    INSERT INTO purchases (id, purchase_number, supplier_id, purchase_date, expected_delivery_date, payment_method, payment_status, subtotal, tax_amount, total, currency, reference, notes, status, received_at, created_at, updated_at)
+    VALUES (
+      compra2_id, 'PUR-000002', prov_oficina_id,
+      CURRENT_DATE - INTERVAL '30 days', CURRENT_DATE - INTERVAL '28 days',
+      'cash', 'paid',
+      purchase_subtotal, purchase_tax, purchase_total, 'DOP',
+      'FAC-OFIC-2025-045', 'Suministros mensuales de oficina',
+      'received', NOW() - INTERVAL '28 days',
+      NOW() - INTERVAL '30 days', NOW() - INTERVAL '28 days'
+    );
+    
+    -- Insertar líneas después
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra2_id, resma_prod_id, 1, 'Resma de Papel A4', 20, 250.00, 18, 5000.00, 900.00, 5900.00, 20, NOW() - INTERVAL '30 days');
+    
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra2_id, pen_prod_id, 2, 'Bolígrafos BIC (Caja 50)', 10, 300.00, 18, 3000.00, 540.00, 3540.00, 10, NOW() - INTERVAL '30 days');
+    
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra2_id, folder_prod_id, 3, 'Folder Manila (Paquete 25)', 15, 180.00, 18, 2700.00, 486.00, 3186.00, 15, NOW() - INTERVAL '30 days');
+    
+    -- COMPRA 3: Periféricos (PENDIENTE - A CRÉDITO)
+    compra3_id := gen_random_uuid();
+    purchase_subtotal := 0;
+    purchase_tax := 0;
+    
+    -- Calcular totales de líneas
+    -- Línea 1: Mouse
+    line_subtotal := 5 * 3000.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    -- Línea 2: Teclados
+    line_subtotal := 5 * 6000.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    purchase_total := purchase_subtotal + purchase_tax;
+    
+    -- Insertar compra primero
+    INSERT INTO purchases (id, purchase_number, supplier_id, purchase_date, expected_delivery_date, payment_method, payment_status, subtotal, tax_amount, total, currency, reference, notes, status, created_at, updated_at)
+    VALUES (
+      compra3_id, 'PUR-000003', prov_tecnologia_id,
+      CURRENT_DATE - INTERVAL '15 days', CURRENT_DATE + INTERVAL '5 days',
+      'credit', 'pending',
+      purchase_subtotal, purchase_tax, purchase_total, 'DOP',
+      'FAC-TEC-2025-078', 'Periféricos para renovación de equipos',
+      'pending',
+      NOW() - INTERVAL '15 days', NOW() - INTERVAL '15 days'
+    );
+    
+    -- Insertar líneas después
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra3_id, mouse_prod_id, 1, 'Mouse Logitech MX Master', 5, 3000.00, 18, 15000.00, 2700.00, 17700.00, 0, NOW() - INTERVAL '15 days');
+    
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra3_id, teclado_prod_id, 2, 'Teclado Mecánico Corsair', 5, 6000.00, 18, 30000.00, 5400.00, 35400.00, 0, NOW() - INTERVAL '15 days');
+    
+    -- COMPRA 4: Laptop HP (BORRADOR)
+    compra4_id := gen_random_uuid();
+    purchase_subtotal := 0;
+    purchase_tax := 0;
+    
+    -- Calcular totales de líneas
+    -- Línea 1: Laptop HP
+    line_subtotal := 3 * 35000.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    purchase_total := purchase_subtotal + purchase_tax;
+    
+    -- Insertar compra primero
+    INSERT INTO purchases (id, purchase_number, supplier_id, purchase_date, expected_delivery_date, payment_method, payment_status, subtotal, tax_amount, total, currency, reference, notes, status, created_at, updated_at)
+    VALUES (
+      compra4_id, 'PUR-000004', prov_tecnologia_id,
+      CURRENT_DATE - INTERVAL '5 days', CURRENT_DATE + INTERVAL '10 days',
+      'bank', 'pending',
+      purchase_subtotal, purchase_tax, purchase_total, 'DOP',
+      NULL, 'Compra pendiente de aprobación',
+      'draft',
+      NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'
+    );
+    
+    -- Insertar líneas después
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra4_id, laptop_hp_prod_id, 1, 'Laptop HP Pavilion', 3, 35000.00, 18, 105000.00, 18900.00, 123900.00, 0, NOW() - INTERVAL '5 days');
+    
+    -- COMPRA 5: Suministros adicionales (RECIBIDA PARCIALMENTE - BANCO)
+    compra5_id := gen_random_uuid();
+    purchase_subtotal := 0;
+    purchase_tax := 0;
+    
+    -- Calcular totales de líneas
+    -- Línea 1: Resmas (recibidas parcialmente)
+    line_subtotal := 30 * 250.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    -- Línea 2: Folders (recibidas completamente)
+    line_subtotal := 20 * 180.00;
+    line_tax := line_subtotal * 0.18;
+    purchase_subtotal := purchase_subtotal + line_subtotal;
+    purchase_tax := purchase_tax + line_tax;
+    
+    purchase_total := purchase_subtotal + purchase_tax;
+    
+    -- Insertar compra primero
+    INSERT INTO purchases (id, purchase_number, supplier_id, purchase_date, expected_delivery_date, payment_method, payment_status, subtotal, tax_amount, total, currency, reference, notes, status, received_at, created_at, updated_at)
+    VALUES (
+      compra5_id, 'PUR-000005', prov_oficina_id,
+      CURRENT_DATE - INTERVAL '20 days', CURRENT_DATE - INTERVAL '15 days',
+      'bank', 'partial',
+      purchase_subtotal, purchase_tax, purchase_total, 'DOP',
+      'FAC-OFIC-2025-052', 'Recepción parcial - pendiente 10 resmas',
+      'received', NOW() - INTERVAL '18 days',
+      NOW() - INTERVAL '20 days', NOW() - INTERVAL '18 days'
+    );
+    
+    -- Insertar líneas después
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra5_id, resma_prod_id, 1, 'Resma de Papel A4', 30, 250.00, 18, 7500.00, 1350.00, 8850.00, 20, NOW() - INTERVAL '20 days');
+    
+    INSERT INTO purchase_lines (id, purchase_id, product_id, line_number, description, quantity, unit_price, tax_rate, subtotal, tax_amount, total, received_quantity, created_at)
+    VALUES (gen_random_uuid(), compra5_id, folder_prod_id, 2, 'Folder Manila (Paquete 25)', 20, 180.00, 18, 3600.00, 648.00, 4248.00, 20, NOW() - INTERVAL '20 days');
+    
+END $$;
+
+-- ====================
+-- CONFIGURACIÓN NCF (ACTUALIZAR TENANT_CONFIG)
+-- ====================
+
+UPDATE tenant_config 
+SET 
+  ncf_fiscal_credit_prefix = 'B01',
+  ncf_fiscal_credit_sequence = 1,
+  ncf_consumer_prefix = 'B02',
+  ncf_consumer_sequence = 1,
+  ncf_debit_note_prefix = 'B03',
+  ncf_debit_note_sequence = 1,
+  ncf_credit_note_prefix = 'B04',
+  ncf_credit_note_sequence = 1,
+  ncf_enabled = true
+WHERE company_legal_name IS NOT NULL;
+
+-- ====================
+-- DEVOLUCIONES (RETURNS)
+-- ====================
+
+DO $$
+DECLARE
+  cliente2_id UUID;
+  cliente3_id UUID;
+  cliente4_id UUID;
+  
+  factura2_id UUID;
+  factura3_id UUID;
+  factura4_id UUID;
+  
+  invoice_line2_id UUID;
+  invoice_line3_id UUID;
+  invoice_line4_id UUID;
+  
+  monitor_prod_id UUID;
+  desarrollo_prod_id UUID;
+  consulta_prod_id UUID;
+  
+  return1_id UUID;
+  return2_id UUID;
+  return3_id UUID;
+BEGIN
+  -- Obtener IDs de clientes
+  SELECT id INTO cliente2_id FROM customers WHERE tax_id = '130-56789-0' LIMIT 1;
+  SELECT id INTO cliente3_id FROM customers WHERE tax_id = '131-99887-7' LIMIT 1;
+  SELECT id INTO cliente4_id FROM customers WHERE tax_id = '001-9876543-2' LIMIT 1;
+  
+  -- Obtener IDs de facturas
+  SELECT id INTO factura2_id FROM invoices WHERE invoice_number = 'INV-00000002' LIMIT 1;
+  SELECT id INTO factura3_id FROM invoices WHERE invoice_number = 'INV-00000003' LIMIT 1;
+  SELECT id INTO factura4_id FROM invoices WHERE invoice_number = 'INV-00000004' LIMIT 1;
+  
+  -- Obtener IDs de productos
+  SELECT id INTO monitor_prod_id FROM products WHERE code = 'MONITOR-001' LIMIT 1;
+  SELECT id INTO desarrollo_prod_id FROM products WHERE code = 'SERV-002' LIMIT 1;
+  SELECT id INTO consulta_prod_id FROM products WHERE code = 'SERV-001' LIMIT 1;
+  
+  -- Obtener IDs de líneas de factura
+  SELECT id INTO invoice_line2_id FROM invoice_lines WHERE invoice_id = factura2_id LIMIT 1;
+  SELECT id INTO invoice_line3_id FROM invoice_lines WHERE invoice_id = factura3_id LIMIT 1;
+  SELECT id INTO invoice_line4_id FROM invoice_lines WHERE invoice_id = factura4_id LIMIT 1;
+  
+  -- DEVOLUCIÓN 1: Devolución completada con reembolso en efectivo
+  return1_id := gen_random_uuid();
+  INSERT INTO returns (
+    id, return_number, invoice_id, customer_id, return_date, return_type, 
+    return_reason, notes, subtotal, tax_amount, total, 
+    status, refund_status, refund_method, refund_amount,
+    created_at, updated_at
+  )
+  VALUES (
+    return1_id, 'RET-000001', factura4_id, cliente4_id,
+    CURRENT_DATE - INTERVAL '3 days', 'invoice',
+    'defect', 'Monitor llegó con pantalla rota', 
+    18000.00, 3240.00, 21240.00,
+    'completed', 'completed', 'cash', 21240.00,
+    NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'
+  );
+  
+  INSERT INTO return_lines (
+    id, return_id, invoice_line_id, product_id, line_number, description,
+    quantity, unit_price, tax_rate, tax_amount, line_total,
+    item_condition, restock_quantity, created_at
+  )
+  VALUES (
+    gen_random_uuid(), return1_id, invoice_line4_id, monitor_prod_id, 1,
+    'Monitor LG 27" Full HD', 1, 18000.00, 0.18, 3240.00, 21240.00,
+    'defective', 0.0, NOW() - INTERVAL '3 days'
+  );
+  
+  -- Actualizar cantidad devuelta en línea de factura original
+  UPDATE invoice_lines 
+  SET returned_quantity = COALESCE(returned_quantity, 0) + 1
+  WHERE id = invoice_line4_id;
+  
+  -- DEVOLUCIÓN 2: Devolución aprobada con nota de crédito (se generará automáticamente al procesar)
+  return2_id := gen_random_uuid();
+  INSERT INTO returns (
+    id, return_number, invoice_id, customer_id, return_date, return_type,
+    return_reason, notes, subtotal, tax_amount, total,
+    status, refund_status, refund_method, refund_amount,
+    created_at, updated_at
+  )
+  VALUES (
+    return2_id, 'RET-000002', factura2_id, cliente2_id,
+    CURRENT_DATE - INTERVAL '10 days', 'invoice',
+    'wrong_item', 'Servicio no coincide con lo solicitado',
+    35000.00, 6300.00, 41300.00,
+    'approved', 'pending', 'credit_note', 41300.00,
+    NOW() - INTERVAL '10 days', NOW() - INTERVAL '9 days'
+  );
+  
+  INSERT INTO return_lines (
+    id, return_id, invoice_line_id, product_id, line_number, description,
+    quantity, unit_price, tax_rate, tax_amount, line_total,
+    item_condition, restock_quantity, created_at
+  )
+  VALUES (
+    gen_random_uuid(), return2_id, invoice_line2_id, consulta_prod_id, 1,
+    'Consultoría IT', 10, 3500.00, 0.18, 6300.00, 41300.00,
+    'new', 10.0, NOW() - INTERVAL '10 days'
+  );
+  
+  -- Actualizar cantidad devuelta en línea de factura original
+  UPDATE invoice_lines 
+  SET returned_quantity = COALESCE(returned_quantity, 0) + 10
+  WHERE id = invoice_line2_id;
+  
+  -- NOTA: La devolución 2 está aprobada y puede procesarse para generar una nota de crédito automáticamente
+  -- cuando se procese con método credit_note, se creará la nota de crédito y se enviará a DGII
+  
+  -- DEVOLUCIÓN 3: Devolución pendiente
+  return3_id := gen_random_uuid();
+  INSERT INTO returns (
+    id, return_number, invoice_id, customer_id, return_date, return_type,
+    return_reason, notes, subtotal, tax_amount, total,
+    status, refund_status, refund_method, refund_amount,
+    created_at, updated_at
+  )
+  VALUES (
+    return3_id, 'RET-000003', factura3_id, cliente3_id,
+    CURRENT_DATE - INTERVAL '5 days', 'invoice',
+    'customer_request', 'Cliente cambió de opinión',
+    85000.00, 15300.00, 100300.00,
+    'pending', NULL, NULL, 0,
+    NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'
+  );
+  
+  INSERT INTO return_lines (
+    id, return_id, invoice_line_id, product_id, line_number, description,
+    quantity, unit_price, tax_rate, tax_amount, line_total,
+    item_condition, restock_quantity, created_at
+  )
+  VALUES (
+    gen_random_uuid(), return3_id, invoice_line3_id, desarrollo_prod_id, 1,
+    'Desarrollo Web Corporativo', 1, 85000.00, 0.18, 15300.00, 100300.00,
+    'new', 0.0, NOW() - INTERVAL '5 days'
+  );
+  
+END $$;
+
+-- ====================
+-- NOTA DE CRÉDITO DE EJEMPLO (opcional, generada desde devolución)
+-- ====================
+-- Nota: Las notas de crédito se generan automáticamente cuando se procesa una devolución
+-- con método de reembolso 'credit_note'. Aquí agregamos una de ejemplo para demostración.
+-- En producción, las notas de crédito se generan desde el módulo de devoluciones.
+
+DO $$
+DECLARE
+  factura2_id UUID;
+  cliente2_id UUID;
+  return2_id UUID;
+  invoice_line2_id UUID;
+  credit_note_id UUID;
+  credit_note_line_id UUID;
+  consulta_prod_id UUID;
+BEGIN
+  -- Obtener IDs necesarios
+  SELECT id INTO factura2_id FROM invoices WHERE invoice_number = 'INV-00000002' LIMIT 1;
+  SELECT id INTO cliente2_id FROM customers WHERE tax_id = '130-56789-0' LIMIT 1;
+  SELECT id INTO return2_id FROM returns WHERE return_number = 'RET-000002' LIMIT 1;
+  SELECT id INTO invoice_line2_id FROM invoice_lines WHERE invoice_id = factura2_id LIMIT 1;
+  SELECT id INTO consulta_prod_id FROM products WHERE code = 'SERV-001' LIMIT 1;
+  
+  IF factura2_id IS NOT NULL AND cliente2_id IS NOT NULL AND return2_id IS NOT NULL THEN
+    -- Crear nota de crédito de ejemplo (generada desde devolución aprobada)
+    credit_note_id := gen_random_uuid();
+    INSERT INTO credit_notes (
+      id, credit_note_number, ncf, ncf_type, original_invoice_id, return_id, customer_id,
+      issue_date, reason, status, subtotal, tax_amount, total, currency, notes,
+      dgii_status, tracking_code, sent_at,
+      created_at, updated_at
+    )
+    VALUES (
+      credit_note_id, 'NC-000001', 'B0401000000000001', '04', factura2_id, return2_id, cliente2_id,
+      CURRENT_DATE - INTERVAL '8 days', 'Devolución de productos - Servicio no solicitado',
+      'sent', 35000.00, 6300.00, 41300.00, 'DOP',
+      'Nota de crédito generada por devolución RET-000002',
+      'sent', 'TRACK-001-NC', NOW() - INTERVAL '8 days',
+      NOW() - INTERVAL '8 days', NOW() - INTERVAL '8 days'
+    );
+    
+    -- Actualizar el estado de la devolución a completed ya que generó la nota de crédito
+    UPDATE returns
+    SET status = 'completed',
+        refund_status = 'completed',
+        updated_at = NOW() - INTERVAL '8 days'
+    WHERE id = return2_id;
+    
+    -- Crear línea de nota de crédito
+    credit_note_line_id := gen_random_uuid();
+    INSERT INTO credit_note_lines (
+      id, credit_note_id, original_invoice_line_id, product_id, line_number, description,
+      quantity, unit_price, tax_rate, tax_amount, line_total, created_at
+    )
+    VALUES (
+      credit_note_line_id, credit_note_id, invoice_line2_id, consulta_prod_id, 1,
+      'Consultoría IT', 10, 3500.00, 0.18, 6300.00, 41300.00,
+      NOW() - INTERVAL '8 days'
+    );
+  END IF;
+END $$;
+
 -- Verificar datos insertados
 SELECT 'Clientes insertados:' as descripcion, COUNT(*) as cantidad FROM customers
 UNION ALL
@@ -718,7 +1196,19 @@ SELECT 'Facturas insertadas:', COUNT(*) FROM invoices
 UNION ALL
 SELECT 'Líneas de factura:', COUNT(*) FROM invoice_lines
 UNION ALL
+SELECT 'Devoluciones insertadas:', COUNT(*) FROM returns
+UNION ALL
+SELECT 'Líneas de devolución:', COUNT(*) FROM return_lines
+UNION ALL
+SELECT 'Notas de crédito:', COUNT(*) FROM credit_notes
+UNION ALL
+SELECT 'Líneas de nota de crédito:', COUNT(*) FROM credit_note_lines
+UNION ALL
 SELECT 'Gastos insertados:', COUNT(*) FROM payments
+UNION ALL
+SELECT 'Compras insertadas:', COUNT(*) FROM purchases
+UNION ALL
+SELECT 'Líneas de compra:', COUNT(*) FROM purchase_lines
 UNION ALL
 SELECT 'Empleados insertados:', COUNT(*) FROM employees
 UNION ALL
@@ -744,3 +1234,30 @@ SELECT
   total_net
 FROM payroll_periods
 ORDER BY period_code;
+
+-- Resumen de compras por estado
+SELECT
+  status,
+  COUNT(*) as cantidad,
+  SUM(total) as total
+FROM purchases
+GROUP BY status
+ORDER BY status;
+
+-- Resumen de devoluciones por estado
+SELECT
+  status,
+  COUNT(*) as cantidad,
+  SUM(total) as total
+FROM returns
+GROUP BY status
+ORDER BY status;
+
+-- Resumen de notas de crédito
+SELECT
+  status,
+  COUNT(*) as cantidad,
+  SUM(total) as total
+FROM credit_notes
+GROUP BY status
+ORDER BY status;

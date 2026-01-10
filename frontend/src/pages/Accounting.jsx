@@ -26,6 +26,17 @@ export default function Accounting() {
   const [entries, setEntries] = useState([])
   const [showEntryModal, setShowEntryModal] = useState(false)
   const [expandedEntryId, setExpandedEntryId] = useState(null)
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const initialEntryForm = {
+    entry_date: todayStr,
+    description: '',
+    reference: '',
+    lines: [
+      { account_code: '', debit: 0, credit: 0, description: '' },
+      { account_code: '', debit: 0, credit: 0, description: '' }
+    ]
+  }
+  const [entryForm, setEntryForm] = useState(initialEntryForm)
 
   // Reports state
   const [trialBalance, setTrialBalance] = useState([])
@@ -95,6 +106,115 @@ export default function Accounting() {
       const errorMessage = error.response?.data?.error || error.message || 'Error al cargar asientos'
       setAlert({ type: 'error', message: errorMessage })
       setEntries([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const openEntryModal = async () => {
+    try {
+      // Asegurar cuentas cargadas para autocompletar
+      if (!accounts || accounts.length === 0) {
+        await fetchAccounts()
+      }
+    } catch (_) {
+      // no-op: el usuario aún puede escribir códigos manualmente
+    } finally {
+      setEntryForm({ ...initialEntryForm })
+      setShowEntryModal(true)
+    }
+  }
+
+  const closeEntryModal = () => {
+    setShowEntryModal(false)
+    setEntryForm({ ...initialEntryForm })
+  }
+
+  const addEntryLine = () => {
+    setEntryForm((prev) => ({
+      ...prev,
+      lines: [...prev.lines, { account_code: '', debit: 0, credit: 0, description: '' }]
+    }))
+  }
+
+  const removeEntryLine = (index) => {
+    setEntryForm((prev) => {
+      if (prev.lines.length <= 2) return prev // mínimo 2 líneas
+      const next = [...prev.lines]
+      next.splice(index, 1)
+      return { ...prev, lines: next }
+    })
+  }
+
+  const updateLineField = (index, field, value) => {
+    setEntryForm((prev) => {
+      const next = [...prev.lines]
+      // Normalizar numéricos
+      let v = value
+      if (field === 'debit' || field === 'credit') {
+        v = value === '' ? '' : Number(value)
+        if (Number.isNaN(v)) v = 0
+      }
+      next[index] = { ...next[index], [field]: v }
+      return { ...prev, lines: next }
+    })
+  }
+
+  const validateEntryForm = () => {
+    if (!entryForm.entry_date) return 'La fecha es requerida'
+    if (!entryForm.description || entryForm.description.trim() === '') return 'La descripción es requerida'
+    if (!entryForm.lines || entryForm.lines.length < 2) return 'Debe incluir al menos 2 líneas'
+    let totalDebit = 0
+    let totalCredit = 0
+    for (const [idx, line] of entryForm.lines.entries()) {
+      if (!line.account_code || line.account_code.trim() === '') {
+        return `La línea ${idx + 1} requiere un código de cuenta`
+      }
+      const d = Number(line.debit) || 0
+      const c = Number(line.credit) || 0
+      if (d < 0 || c < 0) return `Montos inválidos en la línea ${idx + 1}`
+      if (d > 0 && c > 0) return `No puede haber débito y crédito simultáneos en la línea ${idx + 1}`
+      if (d === 0 && c === 0) return `Debe indicar débito o crédito en la línea ${idx + 1}`
+      totalDebit += d
+      totalCredit += c
+    }
+    if (Number(totalDebit.toFixed(2)) !== Number(totalCredit.toFixed(2))) {
+      return `Los débitos (${totalDebit.toFixed(2)}) deben ser iguales a los créditos (${totalCredit.toFixed(2)})`
+    }
+    return null
+  }
+
+  const handleEntrySubmit = async (e) => {
+    e.preventDefault()
+    const errorMsg = validateEntryForm()
+    if (errorMsg) {
+      setAlert({ type: 'error', message: errorMsg })
+      return
+    }
+    try {
+      setLoading(true)
+      const payload = {
+        entry_date: entryForm.entry_date,
+        description: entryForm.description,
+        reference: entryForm.reference?.trim() ? entryForm.reference.trim() : null,
+        lines: entryForm.lines.map((l) => ({
+          account_code: l.account_code,
+          debit: Number(l.debit) || 0,
+          credit: Number(l.credit) || 0,
+          description: l.description?.trim() ? l.description.trim() : null
+        }))
+      }
+      await api.post('/accounting/journal-entries', payload)
+      setAlert({ type: 'success', message: 'Asiento creado exitosamente' })
+      closeEntryModal()
+      fetchEntries()
+      // Actualizar balances visibles del plan de cuentas si estuviera activo
+      if (activeTab === 'accounts') {
+        fetchAccounts()
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || error.message || 'Error al crear el asiento'
+      setAlert({ type: 'error', message: errorMessage })
     } finally {
       setLoading(false)
     }
@@ -538,7 +658,7 @@ export default function Accounting() {
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-lg font-semibold text-gray-900">Asientos Contables</h2>
                 <button
-                  onClick={() => setShowEntryModal(true)}
+                  onClick={openEntryModal}
                   className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   <Plus className="w-5 h-5 mr-2" />
@@ -1167,6 +1287,181 @@ export default function Accounting() {
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   {loading ? 'Guardando...' : editingMapping ? 'Actualizar' : 'Crear'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Journal Entry Modal */}
+      {showEntryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Nuevo Asiento Contable</h2>
+              <button
+                onClick={closeEntryModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleEntrySubmit} className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha *</label>
+                  <input
+                    type="date"
+                    value={entryForm.entry_date}
+                    onChange={(e) => setEntryForm({ ...entryForm, entry_date: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descripción *</label>
+                  <input
+                    type="text"
+                    value={entryForm.description}
+                    onChange={(e) => setEntryForm({ ...entryForm, description: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Descripción del asiento"
+                  />
+                </div>
+                <div className="md:col-span-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Referencia (opcional)</label>
+                  <input
+                    type="text"
+                    value={entryForm.reference}
+                    onChange={(e) => setEntryForm({ ...entryForm, reference: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Ej: FACT-000123"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-md font-semibold text-gray-800">Líneas</h3>
+                  <button
+                    type="button"
+                    onClick={addEntryLine}
+                    className="px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
+                  >
+                    Añadir línea
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Código</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cuenta</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Débito</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Crédito</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {entryForm.lines.map((line, idx) => (
+                        <tr key={idx}>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={line.account_code}
+                              onChange={(e) => updateLineField(idx, 'account_code', e.target.value)}
+                              required
+                              className="w-36 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Ej: 1111"
+                              list="entry-account-codes"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="text-sm text-gray-700">
+                              {accounts.find(a => a.account_code === line.account_code)?.account_name || '-'}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.debit}
+                              onChange={(e) => updateLineField(idx, 'debit', e.target.value)}
+                              className="w-28 text-right px-2 py-1.5 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.credit}
+                              onChange={(e) => updateLineField(idx, 'credit', e.target.value)}
+                              className="w-28 text-right px-2 py-1.5 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={line.description}
+                              onChange={(e) => updateLineField(idx, 'description', e.target.value)}
+                              className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Detalle (opcional)"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => removeEntryLine(idx)}
+                              className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                              title="Eliminar línea"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="bg-gray-50">
+                        <td colSpan="2" className="px-3 py-2 text-sm font-medium text-gray-700">Totales</td>
+                        <td className="px-3 py-2 text-right text-sm font-semibold text-gray-900">
+                          DOP ${entryForm.lines.reduce((s, l) => s + (Number(l.debit) || 0), 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-3 py-2 text-right text-sm font-semibold text-gray-900">
+                          DOP ${entryForm.lines.reduce((s, l) => s + (Number(l.credit) || 0), 0).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td colSpan="2"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {/* datalist para autocompletar códigos de cuenta */}
+                <datalist id="entry-account-codes">
+                  {accounts.map((acc) => (
+                    <option key={acc.id} value={acc.account_code}>
+                      {acc.account_name}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeEntryModal}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {loading ? 'Guardando...' : 'Crear Asiento'}
                 </button>
               </div>
             </form>

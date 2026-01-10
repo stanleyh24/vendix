@@ -34,27 +34,57 @@ export default function Invoices() {
   const loadInvoices = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/invoices');
+      // Include customer information in the request
+      const response = await api.get('/invoices?include=customer');
       const data = response.data || [];
       
       // Map backend data to frontend format
-      const mappedInvoices = data.map(inv => ({
-        id: inv.id,
-        invoice_number: inv.invoice_number,
-        customer: { 
-          id: inv.customer_id, 
+      const mappedInvoices = data.map(inv => {
+        // Use customer object if available, otherwise fallback to customer_name
+        let customerData = {
+          id: inv.customer_id,
           name: inv.customer_name || 'Cliente',
-          tax_id: '' 
-        },
-        date: inv.issue_date?.split('T')[0] || inv.issue_date,
-        due_date: inv.due_date?.split('T')[0] || inv.due_date,
-        status: inv.status,
-        subtotal: inv.subtotal,
-        tax: inv.tax_amount,
-        total: inv.total,
-        items: inv.lines || [],
-        created_at: inv.created_at
-      }));
+          tax_id: ''
+        };
+        
+        // If customer object is included, use it
+        if (inv.customer && typeof inv.customer === 'object') {
+          customerData = {
+            id: inv.customer.id || inv.customer_id,
+            name: inv.customer.name || inv.customer_name || 'Cliente',
+            tax_id: inv.customer.tax_id || '',
+            email: inv.customer.email,
+            phone: inv.customer.phone,
+            address: inv.customer.address,
+            city: inv.customer.city,
+            state: inv.customer.state,
+            postal_code: inv.customer.postal_code,
+            country: inv.customer.country
+          };
+        }
+        
+        return {
+          id: inv.id,
+          invoice_number: inv.invoice_number,
+          ncf: inv.ncf,
+          ncf_type: inv.ncf_type,
+          customer: customerData,
+          date: inv.issue_date?.split('T')[0] || inv.issue_date,
+          due_date: inv.due_date?.split('T')[0] || inv.due_date,
+          status: inv.status,
+          subtotal: inv.subtotal,
+          tax: inv.tax_amount,
+          total: inv.total,
+          paid_amount: inv.paid_amount || 0,
+          withholding_tax_amount: inv.withholding_tax_amount,
+          withholding_tax_type: inv.withholding_tax_type,
+          withholding_rate: inv.withholding_rate,
+          withholding_exempt: inv.withholding_exempt,
+          net_amount: inv.net_amount,
+          items: inv.lines || [],
+          created_at: inv.created_at
+        };
+      });
       
       setInvoices(mappedInvoices);
     } catch (error) {
@@ -125,17 +155,37 @@ export default function Invoices() {
   // Ver detalles de factura
   const handleViewDetails = async (invoice) => {
     try {
-      const response = await api.get(`/invoices/${invoice.id}`);
+      // Include customer information in the request
+      const response = await api.get(`/invoices/${invoice.id}?include=customer`);
       const invoiceData = response.data;
+      
+      // Use customer object if available, otherwise fallback to customer_name
+      let customerData = {
+        id: invoiceData.customer_id,
+        name: invoiceData.customer_name || 'Cliente',
+        tax_id: ''
+      };
+      
+      // If customer object is included, use it
+      if (invoiceData.customer && typeof invoiceData.customer === 'object') {
+        customerData = {
+          id: invoiceData.customer.id || invoiceData.customer_id,
+          name: invoiceData.customer.name || invoiceData.customer_name || 'Cliente',
+          tax_id: invoiceData.customer.tax_id || '',
+          email: invoiceData.customer.email,
+          phone: invoiceData.customer.phone,
+          address: invoiceData.customer.address,
+          city: invoiceData.customer.city,
+          state: invoiceData.customer.state,
+          postal_code: invoiceData.customer.postal_code,
+          country: invoiceData.customer.country
+        };
+      }
       
       // Map backend data
       const mappedInvoice = {
         ...invoiceData,
-        customer: { 
-          id: invoiceData.customer_id, 
-          name: invoiceData.customer_name || 'Cliente',
-          tax_id: '' 
-        },
+        customer: customerData,
         date: invoiceData.issue_date?.split('T')[0] || invoiceData.issue_date,
         due_date: invoiceData.due_date?.split('T')[0] || invoiceData.due_date,
         tax: invoiceData.tax_amount,
@@ -349,6 +399,8 @@ export default function Invoices() {
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">ITBIS</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Retención</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto Neto</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
               </tr>
             </thead>
@@ -365,6 +417,23 @@ export default function Invoices() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{invoice.subtotal.toFixed(2)}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{invoice.tax.toFixed(2)}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-[#FF6B00]">{invoice.total.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                    {invoice.withholding_tax_amount && invoice.withholding_tax_amount > 0 ? (
+                      <span className="text-red-600 font-medium">-{invoice.withholding_tax_amount.toFixed(2)}</span>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                    {invoice.ncf_type === '15' && (
+                      <span className="ml-1 text-xs text-blue-600" title="Factura Gubernamental">🏛️</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold">
+                    {invoice.net_amount !== undefined && invoice.net_amount !== invoice.total ? (
+                      <span className="text-green-600">{invoice.net_amount.toFixed(2)}</span>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                     <button
                       onClick={() => handleViewDetails(invoice)}
@@ -404,7 +473,7 @@ export default function Invoices() {
             </tbody>
             <tfoot className="bg-gray-50">
               <tr>
-                <td className="px-6 py-3 text-sm font-medium text-gray-700" colSpan={7}>Total listado</td>
+                <td className="px-6 py-3 text-sm font-medium text-gray-700" colSpan={9}>Total listado</td>
                 <td className="px-6 py-3 text-sm font-bold text-right text-[#FF6B00]">{totals.total.toFixed(2)}</td>
                 <td className="px-6 py-3"></td>
               </tr>
@@ -552,8 +621,37 @@ export default function Invoices() {
                   </div>
                   <div className="border-t border-gray-300 pt-3 flex justify-between items-center">
                     <span className="text-xl font-bold text-[#212121]">TOTAL:</span>
-                    <span className="text-2xl font-bold text-[#FF6B00]">${selectedInvoice.total?.toFixed(2) || '0.00'}</span>
+                    <span className="text-xl font-bold text-[#FF6B00]">${selectedInvoice.total?.toFixed(2) || '0.00'}</span>
                   </div>
+                  {/* Mostrar retención si existe */}
+                  {selectedInvoice.withholding_tax_amount && selectedInvoice.withholding_tax_amount > 0 && (
+                    <>
+                      <div className="flex justify-between items-center pt-2 border-t border-gray-300">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-600">Retención ISR</span>
+                          {selectedInvoice.withholding_rate && (
+                            <span className="text-xs text-gray-500">
+                              ({(selectedInvoice.withholding_rate * 100).toFixed(2)}%)
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-lg font-semibold text-red-600">
+                          -${selectedInvoice.withholding_tax_amount.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="border-t-2 border-gray-400 pt-3 flex justify-between items-center">
+                        <span className="text-xl font-bold text-[#212121]">Monto Neto a Recibir:</span>
+                        <span className="text-2xl font-bold text-green-600">
+                          ${(selectedInvoice.net_amount || selectedInvoice.total - selectedInvoice.withholding_tax_amount).toFixed(2)}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {selectedInvoice.ncf_type === '15' && (
+                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+                      🏛️ Factura Gubernamental (NCF tipo 15)
+                    </div>
+                  )}
                   {selectedInvoice.paid_amount > 0 && (
                     <div className="flex justify-between items-center text-green-600">
                       <span className="font-medium">Pagado:</span>

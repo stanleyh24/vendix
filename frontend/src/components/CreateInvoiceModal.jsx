@@ -12,7 +12,10 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
     status: 'draft',
     notes: '',
     terms: '',
-    lines: [{ description: '', quantity: 1, unit_price: 0, tax_rate: 0.18 }]
+    lines: [{ description: '', quantity: 1, unit_price: 0, tax_rate: 0.18 }],
+    withholding_tax_type: null,
+    withholding_rate: null,
+    withholding_exempt: false,
   });
   
   const [customers, setCustomers] = useState([]);
@@ -32,7 +35,8 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
   // Tipos de NCF
   const ncfTypes = [
     { value: '01', label: 'Crédito Fiscal', description: 'Para empresas con RNC' },
-    { value: '02', label: 'Consumidor Final', description: 'Para personas sin RNC' }
+    { value: '02', label: 'Consumidor Final', description: 'Para personas sin RNC' },
+    { value: '15', label: 'Gubernamental', description: 'Para entidades del Estado (requiere cliente gubernamental)' }
   ];
 
   useEffect(() => {
@@ -106,7 +110,25 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
     );
     const total = subtotal + tax;
     
-    return { subtotal, tax, total };
+    // Calcular retención si aplica
+    const selectedCustomer = customers.find(c => c.id === formData.customer_id);
+    const isGovInvoice = formData.ncf_type === '15' && selectedCustomer?.is_government_entity && !formData.withholding_exempt;
+    
+    let withholdingAmount = 0;
+    let withholdingRate = 0.05; // 5% por defecto
+    
+    if (isGovInvoice) {
+      if (formData.withholding_rate !== null && formData.withholding_rate !== undefined) {
+        withholdingRate = parseFloat(formData.withholding_rate) || 0.05;
+      } else if (selectedCustomer?.default_withholding_rate) {
+        withholdingRate = selectedCustomer.default_withholding_rate;
+      }
+      withholdingAmount = total * withholdingRate;
+    }
+    
+    const netAmount = total - withholdingAmount;
+    
+    return { subtotal, tax, total, withholdingAmount, withholdingRate, netAmount };
   };
 
   const handleSubmit = async (e) => {
@@ -116,6 +138,19 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
     if (!formData.customer_id) {
       showAlert('error', 'Error', 'Debes seleccionar un cliente');
       return;
+    }
+
+    // Validar NCF tipo 15 requiere cliente gubernamental
+    const selectedCustomer = customers.find(c => c.id === formData.customer_id);
+    if (formData.ncf_type === '15') {
+      if (!selectedCustomer) {
+        showAlert('error', 'Error', 'Debes seleccionar un cliente');
+        return;
+      }
+      if (!selectedCustomer.is_government_entity) {
+        showAlert('error', 'Error', 'NCF tipo 15 (Gubernamental) solo se puede usar con clientes que sean entidades gubernamentales');
+        return;
+      }
     }
 
     if (formData.lines.some(line => !line.description.trim())) {
@@ -135,7 +170,16 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
 
     setLoading(true);
     try {
-      const response = await api.post('/invoices', formData);
+      // Preparar payload con retenciones
+      const totals = calculateTotals();
+      const payload = {
+        ...formData,
+        withholding_tax_type: totals.withholdingAmount > 0 ? 'isr' : null,
+        withholding_rate: totals.withholdingAmount > 0 ? totals.withholdingRate : null,
+        withholding_exempt: formData.withholding_exempt,
+      };
+      
+      const response = await api.post('/invoices', payload);
       showAlert('success', 'Factura creada', `Factura ${response.data.invoice_number} creada exitosamente`);
       onSuccess && onSuccess(response.data);
       onClose();
@@ -155,7 +199,10 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
       status: 'draft',
       notes: '',
       terms: '',
-      lines: [{ description: '', quantity: 1, unit_price: 0, tax_rate: 0.18 }]
+      lines: [{ description: '', quantity: 1, unit_price: 0, tax_rate: 0.18 }],
+      withholding_tax_type: null,
+      withholding_rate: null,
+      withholding_exempt: false,
     });
     setAlert(null);
     onClose();
@@ -225,7 +272,14 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
               </label>
               <select
                 value={formData.ncf_type}
-                onChange={(e) => handleInputChange('ncf_type', e.target.value)}
+                onChange={(e) => {
+                  handleInputChange('ncf_type', e.target.value);
+                  // Reset retenciones si cambia el tipo de NCF
+                  if (e.target.value !== '15') {
+                    handleInputChange('withholding_exempt', false);
+                    handleInputChange('withholding_rate', null);
+                  }
+                }}
                 className="input-field"
               >
                 {ncfTypes.map(type => (
@@ -234,6 +288,11 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
                   </option>
                 ))}
               </select>
+              {formData.ncf_type === '15' && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Requiere cliente gubernamental
+                </p>
+              )}
             </div>
 
             {/* Fecha de emisión */}
@@ -384,6 +443,61 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
             </div>
           </div>
 
+          {/* Retenciones (solo para facturas gubernamentales) */}
+          {formData.ncf_type === '15' && (() => {
+            const selectedCustomer = customers.find(c => c.id === formData.customer_id);
+            const showWithholding = selectedCustomer?.is_government_entity;
+            
+            if (!showWithholding) return null;
+            
+            return (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-[#212121] mb-3">Retenciones</h3>
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.withholding_exempt}
+                      onChange={(e) => handleInputChange('withholding_exempt', e.target.checked)}
+                      className="w-4 h-4 text-[#FF6B00] border-gray-300 rounded focus:ring-[#FF6B00]"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Exento de Retención (Emisor Electrónico)
+                    </span>
+                  </label>
+                  
+                  {!formData.withholding_exempt && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Tasa de Retención (%)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          value={formData.withholding_rate !== null && formData.withholding_rate !== undefined 
+                            ? (formData.withholding_rate * 100) 
+                            : (selectedCustomer?.default_withholding_rate 
+                              ? (selectedCustomer.default_withholding_rate * 100) 
+                              : '5')}
+                          onChange={(e) => handleInputChange('withholding_rate', (parseFloat(e.target.value) || 5) / 100)}
+                          className="input-field pr-12"
+                          placeholder="5"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Por defecto: {selectedCustomer?.default_withholding_rate ? (selectedCustomer.default_withholding_rate * 100).toFixed(2) : '5'}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Totales */}
           <div className="bg-[#F5F5F5] rounded-lg p-4">
             <h3 className="text-lg font-semibold text-[#212121] mb-3">Resumen</h3>
@@ -398,8 +512,22 @@ export default function CreateInvoiceModal({ isOpen, onClose, onSuccess }) {
               </div>
               <div className="border-t border-gray-300 pt-2 flex justify-between">
                 <span className="font-bold text-lg">Total:</span>
-                <span className="font-bold text-2xl text-[#FF6B00]">${totals.total.toFixed(2)}</span>
+                <span className="font-bold text-xl text-[#FF6B00]">${totals.total.toFixed(2)}</span>
               </div>
+              
+              {/* Mostrar retención si aplica */}
+              {totals.withholdingAmount > 0 && (
+                <>
+                  <div className="flex justify-between text-sm pt-2 border-t border-gray-300">
+                    <span className="text-gray-600">Retención ISR ({(totals.withholdingRate * 100).toFixed(2)}%):</span>
+                    <span className="font-semibold text-red-600">-${totals.withholdingAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t-2 border-gray-400">
+                    <span className="font-bold text-lg">Monto Neto a Recibir:</span>
+                    <span className="font-bold text-2xl text-green-600">${totals.netAmount.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

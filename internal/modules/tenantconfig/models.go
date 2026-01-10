@@ -50,6 +50,9 @@ type TenantConfig struct {
 	NCFDebitNoteSequence    int     `db:"ncf_debit_note_sequence" json:"ncf_debit_note_sequence"`
 	NCFCreditNotePrefix     *string `db:"ncf_credit_note_prefix" json:"ncf_credit_note_prefix,omitempty"`
 	NCFCreditNoteSequence   int     `db:"ncf_credit_note_sequence" json:"ncf_credit_note_sequence"`
+	NCFGovPrefix            *string `db:"ncf_gov_prefix" json:"ncf_gov_prefix,omitempty"`         // Prefijo para NCF tipo 15 (Gubernamental)
+	NCFGovSequence          int     `db:"ncf_gov_sequence" json:"ncf_gov_sequence"`               // Secuencia actual para NCF tipo 15
+	NCFGovEndRange          int     `db:"ncf_gov_end_range" json:"ncf_gov_end_range"`             // Fin del rango para NCF tipo 15
 
 	// Configuración monetaria
 	DefaultCurrency string  `db:"default_currency" json:"default_currency"`
@@ -117,6 +120,8 @@ type UpdateTenantConfigRequest struct {
 	NCFDebitNoteSequence    *int    `json:"ncf_debit_note_sequence,omitempty"`
 	NCFCreditNotePrefix     *string `json:"ncf_credit_note_prefix,omitempty"`
 	NCFCreditNoteSequence   *int    `json:"ncf_credit_note_sequence,omitempty"`
+	NCFGovPrefix            *string `json:"ncf_gov_prefix,omitempty"`         // Prefijo para NCF tipo 15
+	NCFGovSequence          *int    `json:"ncf_gov_sequence,omitempty"`       // Secuencia para NCF tipo 15
 
 	// Configuración monetaria
 	DefaultCurrency *string  `json:"default_currency,omitempty"`

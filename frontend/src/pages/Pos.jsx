@@ -28,8 +28,10 @@ export default function Pos() {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [ncfType, setNcfType] = useState('02'); // 01=Crédito Fiscal, 02=Consumidor Final (default)
+  const [ncfType, setNcfType] = useState('02'); // 01=Crédito Fiscal, 02=Consumidor Final, 15=Gubernamental (default)
   const [paymentMethod, setPaymentMethod] = useState('cash'); // cash, card, transfer, mixed
+  const [withholdingExempt, setWithholdingExempt] = useState(false);
+  const [withholdingRate, setWithholdingRate] = useState(null);
   const [cart, setCart] = useState([]);
   const [searchCustomer, setSearchCustomer] = useState('');
   const [searchProduct, setSearchProduct] = useState('');
@@ -301,16 +303,28 @@ export default function Pos() {
     setSearchCustomer('');
     
     // Si se selecciona cliente genérico, forzar NCF 02 (Consumidor Final)
+    // Si se selecciona un cliente gubernamental, usar NCF 15
     // Si se selecciona un cliente con RNC, permitir elegir entre 01 y 02
     if (customer.is_generic) {
       setNcfType('02');
+      setWithholdingExempt(false);
+      setWithholdingRate(null);
+    } else if (customer.is_government_entity) {
+      // Si es entidad gubernamental, usar NCF 15 por defecto
+      setNcfType('15');
+      setWithholdingExempt(false);
+      setWithholdingRate(customer.default_withholding_rate || 0.05);
     } else if (customer.customer_type === 'business' && customer.tax_id) {
       // Si es empresa con RNC, por defecto usar Crédito Fiscal (01)
       // pero el usuario puede cambiarlo
       setNcfType('01');
+      setWithholdingExempt(false);
+      setWithholdingRate(null);
     } else {
       // Para otros clientes, usar Consumidor Final por defecto
       setNcfType('02');
+      setWithholdingExempt(false);
+      setWithholdingRate(null);
     }
   };
 
@@ -366,6 +380,22 @@ export default function Pos() {
     return calculateSubtotal() + calculateTax();
   };
 
+  // Calcular retención si aplica
+  const calculateWithholding = () => {
+    if (ncfType === '15' && selectedCustomer?.is_government_entity && !withholdingExempt) {
+      const total = calculateTotal();
+      const rate = withholdingRate !== null && withholdingRate !== undefined 
+        ? withholdingRate 
+        : (selectedCustomer?.default_withholding_rate || 0.05);
+      return total * rate;
+    }
+    return 0;
+  };
+
+  const calculateNetAmount = () => {
+    return calculateTotal() - calculateWithholding();
+  };
+
   // Abrir modal de checkout
   const openCheckout = () => {
     if (cart.length === 0) {
@@ -382,7 +412,7 @@ export default function Pos() {
       const saleData = {
         customer_id: selectedCustomer ? selectedCustomer.id : null,
         payment_type: paymentMethod,
-        ncf_type: ncfType, // Agregar tipo de NCF
+        ncf_type: ncfType,
         notes: `Venta procesada desde POS - ${paymentMethod}`,
         lines: cart.map(item => ({
           product_id: item.product.id,
@@ -391,6 +421,9 @@ export default function Pos() {
           unit_price: item.product.price,
           tax_rate: item.product.tax_rate,
         })),
+        withholding_exempt: withholdingExempt,
+        withholding_rate: ncfType === '15' && !withholdingExempt && withholdingRate !== null ? withholdingRate : null,
+        withholding_tax_type: ncfType === '15' && !withholdingExempt && calculateWithholding() > 0 ? 'isr' : null,
       };
 
       const response = await api.post('/sales', saleData);
@@ -430,7 +463,7 @@ export default function Pos() {
   // Show cash register selection screen
   if (showRegisterSelection) {
     return (
-      <div className="flex" style={{ height: 'calc(100vh - 64px)' }}>
+      <div className="flex -m-8" style={{ height: 'calc(100vh - 64px)', maxHeight: 'calc(100vh - 64px)', overflow: 'hidden' }}>
         {/* Left Sidebar - Empty as per wireframe */}
         <div className="w-20 bg-gray-50 border-r border-gray-200"></div>
 
@@ -540,7 +573,7 @@ export default function Pos() {
 
   // Show POS interface after session is opened
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 64px)' }}>
+    <div className="flex flex-col h-full -m-8" style={{ height: 'calc(100vh - 64px)', maxHeight: 'calc(100vh - 64px)' }}>
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -594,9 +627,9 @@ export default function Pos() {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0" style={{ minHeight: 0 }}>
         {/* Panel de productos */}
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+        <div className="flex-1 overflow-y-auto p-6 bg-gray-50" style={{ minHeight: 0, maxHeight: '100%' }}>
           <div className="mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -720,10 +753,27 @@ export default function Pos() {
             </div>
             <div className="flex items-center justify-between pt-3 border-t border-gray-200">
               <span className="font-bold text-lg text-[#212121]">Total:</span>
-              <span className="font-bold text-2xl text-[#FF6B00]">
+              <span className="font-bold text-xl text-[#FF6B00]">
                 ${calculateTotal().toFixed(2)}
               </span>
             </div>
+            {/* Mostrar retención si aplica */}
+            {calculateWithholding() > 0 && (
+              <>
+                <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-300">
+                  <span className="text-gray-600 text-xs">Retención ISR:</span>
+                  <span className="font-semibold text-red-600 text-xs">
+                    -${calculateWithholding().toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t-2 border-gray-400">
+                  <span className="font-bold text-base text-[#212121]">Neto:</span>
+                  <span className="font-bold text-xl text-green-600">
+                    ${calculateNetAmount().toFixed(2)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Botones de acción */}
@@ -818,24 +868,31 @@ export default function Pos() {
                 <h3 className="text-lg font-semibold text-[#212121] mb-3">
                   Tipo de Comprobante Fiscal
                 </h3>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => setNcfType('02')}
-                    className={`py-4 px-4 rounded-lg font-medium transition-all ${
+                    onClick={() => {
+                      setNcfType('02');
+                      setWithholdingExempt(false);
+                      setWithholdingRate(null);
+                    }}
+                    className={`py-3 px-3 rounded-lg font-medium transition-all ${
                       ncfType === '02'
                         ? 'bg-[#FF6B00] text-white shadow-md ring-2 ring-[#FF6B00] ring-offset-2'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    <div className="text-sm font-bold mb-1">NCF 02</div>
-                    <div className="text-xs opacity-90">Consumidor Final</div>
-                    <div className="text-[10px] mt-1 opacity-75">Para personas sin RNC</div>
+                    <div className="text-xs font-bold mb-1">NCF 02</div>
+                    <div className="text-[10px] opacity-90">Consumidor Final</div>
                   </button>
                   <button
-                    onClick={() => setNcfType('01')}
+                    onClick={() => {
+                      setNcfType('01');
+                      setWithholdingExempt(false);
+                      setWithholdingRate(null);
+                    }}
                     disabled={selectedCustomer?.is_generic}
                     title={selectedCustomer?.is_generic ? 'Requiere cliente con RNC' : ''}
-                    className={`py-4 px-4 rounded-lg font-medium transition-all ${
+                    className={`py-3 px-3 rounded-lg font-medium transition-all ${
                       ncfType === '01'
                         ? 'bg-[#00C853] text-white shadow-md ring-2 ring-[#00C853] ring-offset-2'
                         : selectedCustomer?.is_generic
@@ -843,14 +900,37 @@ export default function Pos() {
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    <div className="text-sm font-bold mb-1">NCF 01</div>
-                    <div className="text-xs opacity-90">Crédito Fiscal</div>
-                    <div className="text-[10px] mt-1 opacity-75">Para empresas con RNC</div>
+                    <div className="text-xs font-bold mb-1">NCF 01</div>
+                    <div className="text-[10px] opacity-90">Crédito Fiscal</div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (selectedCustomer?.is_government_entity) {
+                        setNcfType('15');
+                        setWithholdingRate(selectedCustomer.default_withholding_rate || 0.05);
+                      }
+                    }}
+                    disabled={!selectedCustomer?.is_government_entity}
+                    title={!selectedCustomer?.is_government_entity ? 'Requiere cliente gubernamental' : ''}
+                    className={`py-3 px-3 rounded-lg font-medium transition-all ${
+                      ncfType === '15'
+                        ? 'bg-[#1976D2] text-white shadow-md ring-2 ring-[#1976D2] ring-offset-2'
+                        : !selectedCustomer?.is_government_entity
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <div className="text-xs font-bold mb-1">NCF 15</div>
+                    <div className="text-[10px] opacity-90">Gubernamental</div>
                   </button>
                 </div>
                 {selectedCustomer?.is_generic ? (
                   <p className="text-xs text-yellow-600 mt-2 flex items-center gap-1">
                     ⚠️ Crédito Fiscal requiere cliente con RNC válido
+                  </p>
+                ) : ncfType === '15' ? (
+                  <p className="text-xs text-blue-600 mt-2">
+                    Factura gubernamental - Se aplicará retención ISR
                   </p>
                 ) : (
                   <p className="text-xs text-gray-500 mt-2">
@@ -858,6 +938,40 @@ export default function Pos() {
                   </p>
                 )}
               </div>
+
+              {/* Retenciones (solo para facturas gubernamentales) */}
+              {ncfType === '15' && selectedCustomer?.is_government_entity && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <h4 className="text-sm font-semibold text-[#212121] mb-2">Retenciones</h4>
+                  <label className="flex items-center gap-2 cursor-pointer mb-2">
+                    <input
+                      type="checkbox"
+                      checked={withholdingExempt}
+                      onChange={(e) => setWithholdingExempt(e.target.checked)}
+                      className="w-4 h-4 text-[#FF6B00] border-gray-300 rounded"
+                    />
+                    <span className="text-xs text-gray-700">Exento de Retención</span>
+                  </label>
+                  {!withholdingExempt && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Tasa de Retención (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={withholdingRate !== null && withholdingRate !== undefined 
+                          ? (withholdingRate * 100).toFixed(2)
+                          : (selectedCustomer?.default_withholding_rate ? (selectedCustomer.default_withholding_rate * 100).toFixed(2) : '5')}
+                        onChange={(e) => setWithholdingRate((parseFloat(e.target.value) || 5) / 100)}
+                        className="input-field text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Sección 3: Método de Pago */}
               <div>
@@ -927,10 +1041,25 @@ export default function Pos() {
                   </div>
                   <div className="border-t border-gray-300 pt-2 flex justify-between">
                     <span className="font-bold text-lg">Total:</span>
-                    <span className="font-bold text-2xl text-[#FF6B00]">
+                    <span className="font-bold text-xl text-[#FF6B00]">
                       RD$ {calculateTotal().toFixed(2)}
                     </span>
                   </div>
+                  {/* Mostrar retención si aplica */}
+                  {calculateWithholding() > 0 && (
+                    <>
+                      <div className="flex justify-between text-sm pt-2 border-t border-gray-300">
+                        <span className="text-gray-600">Retención ISR ({(withholdingRate !== null && withholdingRate !== undefined ? withholdingRate : (selectedCustomer?.default_withholding_rate || 0.05)) * 100}%):</span>
+                        <span className="font-semibold text-red-600">-RD$ {calculateWithholding().toFixed(2)}</span>
+                      </div>
+                      <div className="border-t-2 border-gray-400 pt-2 flex justify-between">
+                        <span className="font-bold text-lg">Monto Neto a Recibir:</span>
+                        <span className="font-bold text-2xl text-green-600">
+                          RD$ {calculateNetAmount().toFixed(2)}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 

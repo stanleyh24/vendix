@@ -26,6 +26,8 @@ export default function Customers() {
     state: '',
     postal_code: '',
     country: 'República Dominicana',
+    is_government_entity: false,
+    default_withholding_rate: '',
   });
 
   // Cargar clientes
@@ -80,6 +82,8 @@ export default function Customers() {
       state: '',
       postal_code: '',
       country: 'República Dominicana',
+      is_government_entity: false,
+      default_withholding_rate: '',
     });
     setShowModal(true);
   };
@@ -98,6 +102,8 @@ export default function Customers() {
       state: customer.state || '',
       postal_code: customer.postal_code || '',
       country: customer.country || 'República Dominicana',
+      is_government_entity: customer.is_government_entity || false,
+      default_withholding_rate: customer.default_withholding_rate || '',
     });
     setShowModal(true);
   };
@@ -105,6 +111,12 @@ export default function Customers() {
   // Guardar cliente
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Validar que cliente gubernamental tenga RNC
+    if (formData.is_government_entity && (!formData.tax_id || formData.tax_id.trim() === '')) {
+      showAlert('error', 'Error de validación', 'Los clientes gubernamentales deben tener RNC');
+      return;
+    }
 
     const payload = {
       customer_type: formData.customer_type,
@@ -117,6 +129,8 @@ export default function Customers() {
       state: formData.state || null,
       postal_code: formData.postal_code || null,
       country: formData.country || null,
+      is_government_entity: formData.is_government_entity || false,
+      default_withholding_rate: formData.default_withholding_rate ? parseFloat(formData.default_withholding_rate) : null,
     };
 
     try {
@@ -310,7 +324,7 @@ export default function Customers() {
               {/* Header del card */}
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     {customer.customer_type === 'individual' ? (
                       <User className="w-5 h-5 text-[#FF6B00]" />
                     ) : (
@@ -319,6 +333,11 @@ export default function Customers() {
                     <span className="text-xs font-medium text-gray-500 capitalize">
                       {customer.customer_type === 'individual' ? 'Persona' : 'Empresa'}
                     </span>
+                    {customer.is_government_entity && (
+                      <span className="text-xs font-medium px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+                        Gubernamental
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-lg font-semibold text-[#212121]">
                     {customer.name}
@@ -436,19 +455,43 @@ export default function Customers() {
                 </div>
               </div>
 
+              {/* Entidad Gubernamental */}
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_government_entity}
+                    onChange={(e) => setFormData({ ...formData, is_government_entity: e.target.checked })}
+                    className="w-5 h-5 text-[#FF6B00] border-gray-300 rounded focus:ring-[#FF6B00]"
+                  />
+                  <span className="text-sm font-medium text-[#212121]">
+                    Entidad Gubernamental
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-7">
+                  Marca esta opción si el cliente es una entidad del Estado (requiere RNC válido)
+                </p>
+              </div>
+
               {/* RNC/Cédula y Nombre */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#212121] mb-2">
-                    {formData.customer_type === 'individual' ? 'Cédula' : 'RNC'}
+                    {formData.customer_type === 'individual' ? 'Cédula' : 'RNC'} {formData.is_government_entity && '*'}
                   </label>
                   <input
                     type="text"
+                    required={formData.is_government_entity}
                     value={formData.tax_id}
                     onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
                     className="input-field"
                     placeholder={formData.customer_type === 'individual' ? '000-0000000-0' : '000-00000-0'}
                   />
+                  {formData.is_government_entity && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      RNC obligatorio para entidades gubernamentales
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -465,6 +508,33 @@ export default function Customers() {
                   />
                 </div>
               </div>
+
+              {/* Tasa de Retención por Defecto (solo si es gubernamental) */}
+              {formData.is_government_entity && (
+                <div>
+                  <label className="block text-sm font-medium text-[#212121] mb-2">
+                    Tasa de Retención por Defecto (opcional)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="1"
+                      value={formData.default_withholding_rate}
+                      onChange={(e) => setFormData({ ...formData, default_withholding_rate: e.target.value })}
+                      className="input-field pr-12"
+                      placeholder="0.05"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
+                      (5% = 0.05)
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Tasa de retención ISR por defecto (ej: 0.05 para 5%). Si no se especifica, se usará 5% por defecto.
+                  </p>
+                </div>
+              )}
 
               {/* Email y Teléfono */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

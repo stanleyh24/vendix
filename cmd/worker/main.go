@@ -67,8 +67,41 @@ func main() {
 	mux.HandleFunc(jobs.TaskSendInvoiceToDGII, handlers.HandleSendInvoiceToDGII)
 	mux.HandleFunc(jobs.TaskProcessRecurringBilling, handlers.HandleProcessRecurringBilling)
 	mux.HandleFunc(jobs.TaskGenerateMonthlyReports, handlers.HandleGenerateMonthlyReports)
+	mux.HandleFunc(jobs.TaskCheckPurchaseDueDates, handlers.HandleCheckPurchaseDueDates)
+	mux.HandleFunc(jobs.TaskSchedulePurchaseDueChecks, handlers.HandleSchedulePurchaseDueChecks)
 
-	logger.Info("Starting worker server")
+	// Create scheduler for periodic tasks
+	scheduler := asynq.NewScheduler(
+		redisOpt,
+		&asynq.SchedulerOpts{
+			LogLevel: asynq.InfoLevel,
+		},
+	)
+
+	// Schedule daily purchase due date checks at 9:00 AM
+	// This will create jobs for all active tenants
+	_, err = scheduler.Register(
+		"0 9 * * *", // Cron expression: Every day at 9:00 AM
+		asynq.NewTask(
+			jobs.TaskSchedulePurchaseDueChecks,
+			nil,
+		),
+		asynq.Queue("default"),
+	)
+	if err != nil {
+		logger.Error("Failed to register purchase due dates scheduler", "error", err)
+	} else {
+		logger.Info("Scheduled daily purchase due date checks at 9:00 AM")
+	}
+
+	logger.Info("Starting worker server and scheduler")
+
+	// Start scheduler in a goroutine
+	go func() {
+		if err := scheduler.Run(); err != nil {
+			logger.Fatal("Scheduler failed", "error", err)
+		}
+	}()
 
 	// Start worker in a goroutine
 	go func() {
@@ -82,7 +115,8 @@ func main() {
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down worker...")
+	logger.Info("Shutting down worker and scheduler...")
+	scheduler.Shutdown()
 	srv.Shutdown()
 
 	logger.Info("Worker exited gracefully")

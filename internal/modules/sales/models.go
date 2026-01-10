@@ -29,26 +29,32 @@ type Sale struct {
 
 // SaleLine represents a line item in a sale
 type SaleLine struct {
-	ID          uuid.UUID  `db:"id" json:"id"`
-	SaleID      uuid.UUID  `db:"sale_id" json:"sale_id"`
-	ProductID   *uuid.UUID `db:"product_id" json:"product_id,omitempty"`
-	LineNumber  int        `db:"line_number" json:"line_number"`
-	Description string     `db:"description" json:"description"`
-	Quantity    float64    `db:"quantity" json:"quantity"`
-	UnitPrice   float64    `db:"unit_price" json:"unit_price"`
-	TaxRate     float64    `db:"tax_rate" json:"tax_rate"`
-	TaxAmount   float64    `db:"tax_amount" json:"tax_amount"`
-	LineTotal   float64    `db:"line_total" json:"line_total"`
-	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
+	ID               uuid.UUID  `db:"id" json:"id"`
+	SaleID           uuid.UUID  `db:"sale_id" json:"sale_id"`
+	ProductID        *uuid.UUID `db:"product_id" json:"product_id,omitempty"`
+	LineNumber       int        `db:"line_number" json:"line_number"`
+	Description      string     `db:"description" json:"description"`
+	Quantity         float64    `db:"quantity" json:"quantity"`
+	ReturnedQuantity float64    `db:"returned_quantity" json:"returned_quantity"`
+	UnitPrice        float64    `db:"unit_price" json:"unit_price"`
+	TaxRate          float64    `db:"tax_rate" json:"tax_rate"`
+	TaxAmount        float64    `db:"tax_amount" json:"tax_amount"`
+	LineTotal        float64    `db:"line_total" json:"line_total"`
+	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
 }
 
 // CreateSaleRequest represents the request to create a sale
 type CreateSaleRequest struct {
 	CustomerID  *uuid.UUID          `json:"customer_id,omitempty"`            // Opcional - si no se envía, usa cliente genérico
 	PaymentType string              `json:"payment_type" validate:"required"` // cash, card, transfer, etc.
-	NCFType     string              `json:"ncf_type,omitempty"`               // 01=Crédito Fiscal, 02=Consumidor Final (default: 02)
+	NCFType     string              `json:"ncf_type,omitempty"`               // 01=Crédito Fiscal, 02=Consumidor Final, 15=Gubernamental (default: 02)
 	Notes       *string             `json:"notes,omitempty"`
 	Lines       []CreateSaleLineReq `json:"lines" validate:"required,min=1"`
+	
+	// Retención fiscal
+	WithholdingTaxType *string  `json:"withholding_tax_type,omitempty"` // 'isr', 'itbis'
+	WithholdingRate    *float64 `json:"withholding_rate,omitempty"`     // ej: 0.05 para 5%
+	WithholdingExempt  *bool    `json:"withholding_exempt,omitempty"`   // si está exento de retenciones
 }
 
 // CreateSaleLineReq represents a line item in the create sale request

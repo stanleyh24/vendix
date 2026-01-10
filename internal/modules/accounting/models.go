@@ -171,6 +171,10 @@ const (
 	// Pagos a proveedores
 	TransactionTypeSupplierPaymentCash = "supplier_payment_cash"
 	TransactionTypeSupplierPaymentBank = "supplier_payment_bank"
+	
+	// Devoluciones
+	TransactionTypeSalesReturn = "sales_return"
+	TransactionTypeTaxReturn   = "tax_return"
 )
 
 // AccountMapping represents the mapping of transaction type to accounting account
@@ -197,4 +201,16 @@ type UpdateAccountMappingRequest struct {
 	AccountCode *string `json:"account_code,omitempty"`
 	Description *string `json:"description,omitempty"`
 	IsActive    *bool   `json:"is_active,omitempty"`
+}
+
+// AccountsPayableSummary represents a summary of accounts payable
+type AccountsPayableSummary struct {
+	AccountBalance   float64   `json:"account_balance"`    // Balance from chart of accounts
+	TotalOutstanding float64   `json:"total_outstanding"`  // Total from unpaid purchases
+	UnpaidPurchases  int       `json:"unpaid_purchases"`    // Number of unpaid purchases
+	Total0_30         float64   `json:"total_0_30"`          // Amount in 0-30 days
+	Total31_60        float64   `json:"total_31_60"`        // Amount in 31-60 days
+	Total61_90        float64   `json:"total_61_90"`         // Amount in 61-90 days
+	TotalOver90       float64   `json:"total_over_90"`      // Amount over 90 days
+	LastCalculated    time.Time `json:"last_calculated"`     // When the summary was calculated
 }

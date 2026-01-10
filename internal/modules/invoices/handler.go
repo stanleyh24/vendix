@@ -2,6 +2,7 @@ package invoices
 
 import (
 	"fmt"
+	"strings"
 
 	"vendix/internal/config"
 	"vendix/internal/database"
@@ -33,9 +34,12 @@ func RegisterRoutes(router fiber.Router, db *database.DB, cfg *config.Config) {
 	invoices := router.Group("/invoices")
 	invoices.Post("/", h.Create)
 	invoices.Get("/", h.List)
+	invoices.Post("/allocate-payment", h.AllocatePayment)
+	invoices.Get("/accounts-receivable", h.GetAccountsReceivable)
 	// Specific routes must be registered before parameterized routes
 	invoices.Get("/:id/pdf", h.DownloadPDF)
 	invoices.Get("/:id/xml", h.DownloadXML)
+	invoices.Get("/:id/allocations", h.GetInvoiceAllocations)
 	invoices.Post("/:id/send", h.SendInvoice)
 	invoices.Post("/:id/cancel", h.CancelInvoice)
 	invoices.Get("/:id", h.Get)
@@ -75,18 +79,31 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 // @Tags invoices
 // @Produce json
 // @Param status query string false "Filter by status"
+// @Param include query string false "Comma-separated list of relations to include (e.g., customer)"
 // @Success 200 {array} Invoice
 // @Router /api/v1/tenant/invoices [get]
 func (h *Handler) List(c *fiber.Ctx) error {
 	schema := middleware.GetTenantSchema(c)
 	status := c.Query("status")
+	includeParam := c.Query("include")
 
 	var statusPtr *string
 	if status != "" {
 		statusPtr = &status
 	}
 
-	invoices, err := h.service.List(c.Context(), schema, statusPtr)
+	// Parse include parameter
+	var includes []string
+	if includeParam != "" {
+		for _, include := range strings.Split(includeParam, ",") {
+			trimmed := strings.TrimSpace(strings.ToLower(include))
+			if trimmed != "" {
+				includes = append(includes, trimmed)
+			}
+		}
+	}
+
+	invoices, err := h.service.List(c.Context(), schema, statusPtr, includes)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
@@ -101,13 +118,26 @@ func (h *Handler) List(c *fiber.Ctx) error {
 // @Tags invoices
 // @Produce json
 // @Param id path string true "Invoice ID"
+// @Param include query string false "Comma-separated list of relations to include (e.g., customer)"
 // @Success 200 {object} Invoice
 // @Router /api/v1/tenant/invoices/{id} [get]
 func (h *Handler) Get(c *fiber.Ctx) error {
 	schema := middleware.GetTenantSchema(c)
 	id := c.Params("id")
+	includeParam := c.Query("include")
 
-	invoice, err := h.service.GetByID(c.Context(), schema, id)
+	// Parse include parameter
+	var includes []string
+	if includeParam != "" {
+		for _, include := range strings.Split(includeParam, ",") {
+			trimmed := strings.TrimSpace(strings.ToLower(include))
+			if trimmed != "" {
+				includes = append(includes, trimmed)
+			}
+		}
+	}
+
+	invoice, err := h.service.GetByID(c.Context(), schema, id, includes)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Invoice not found",
@@ -202,7 +232,7 @@ func (h *Handler) DownloadPDF(c *fiber.Ctx) error {
 	}
 
 	// Get invoice for filename
-	inv, err := h.service.GetByID(c.Context(), schema, id)
+	inv, err := h.service.GetByID(c.Context(), schema, id, []string{})
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Invoice not found"})
 	}
@@ -229,7 +259,7 @@ func (h *Handler) DownloadXML(c *fiber.Ctx) error {
 	}
 
 	// Get invoice for filename
-	inv, err := h.service.GetByID(c.Context(), schema, id)
+	inv, err := h.service.GetByID(c.Context(), schema, id, []string{})
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Invoice not found"})
 	}
@@ -237,4 +267,78 @@ func (h *Handler) DownloadXML(c *fiber.Ctx) error {
 	c.Set("Content-Type", "application/xml")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=invoice-%s.xml", inv.InvoiceNumber))
 	return c.Send(xmlBytes)
+}
+
+// AllocatePayment allocates a payment to one or more invoices
+// @Summary Allocate payment to invoices
+// @Tags invoices
+// @Accept json
+// @Produce json
+// @Param allocation body CreatePaymentAllocationRequest true "Payment allocation data"
+// @Success 200 {object} map[string]string
+// @Router /api/v1/tenant/invoices/allocate-payment [post]
+func (h *Handler) AllocatePayment(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+
+	var req CreatePaymentAllocationRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request body",
+		})
+	}
+
+	if err := h.service.AllocatePayment(c.Context(), schema, &req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{"message": "Payment allocated successfully"})
+}
+
+// GetInvoiceAllocations gets all payment allocations for an invoice
+// @Summary Get invoice allocations
+// @Tags invoices
+// @Produce json
+// @Param id path string true "Invoice ID"
+// @Success 200 {array} PaymentAllocation
+// @Router /api/v1/tenant/invoices/{id}/allocations [get]
+func (h *Handler) GetInvoiceAllocations(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	id := c.Params("id")
+
+	allocations, err := h.service.GetInvoiceAllocations(c.Context(), schema, id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(allocations)
+}
+
+// GetAccountsReceivable generates an accounts receivable aging report
+// @Summary Get accounts receivable report
+// @Tags invoices
+// @Produce json
+// @Param as_of_date query string false "Report date (YYYY-MM-DD), defaults to today"
+// @Success 200 {object} AccountsReceivableReport
+// @Router /api/v1/tenant/invoices/accounts-receivable [get]
+func (h *Handler) GetAccountsReceivable(c *fiber.Ctx) error {
+	schema := middleware.GetTenantSchema(c)
+	asOfDate := c.Query("as_of_date")
+
+	var asOfDatePtr *string
+	if asOfDate != "" {
+		asOfDatePtr = &asOfDate
+	}
+
+	report, err := h.service.GetAccountsReceivableReport(c.Context(), schema, asOfDatePtr)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(report)
 }

@@ -25,21 +25,39 @@ func NewService(db *database.DB, cfg *config.Config) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, schema, userID string, req *CreateCustomerRequest) (*CustomerResponse, error) {
+	// Validar que cliente gubernamental tenga RNC
+	isGovernmentEntity := false
+	if req.IsGovernmentEntity != nil {
+		isGovernmentEntity = *req.IsGovernmentEntity
+	}
+	
+	if isGovernmentEntity {
+		if req.TaxID == nil || *req.TaxID == "" {
+			return nil, fmt.Errorf("clientes gubernamentales deben tener RNC válido")
+		}
+		// Validar formato de RNC (9 o 11 dígitos)
+		if len(*req.TaxID) != 9 && len(*req.TaxID) != 11 {
+			return nil, fmt.Errorf("RNC debe tener 9 o 11 dígitos")
+		}
+	}
+
 	customer := &Customer{
-		ID:           uuid.New(),
-		CustomerType: req.CustomerType,
-		TaxID:        req.TaxID,
-		Name:         req.Name,
-		Email:        req.Email,
-		Phone:        req.Phone,
-		Address:      req.Address,
-		City:         req.City,
-		State:        req.State,
-		PostalCode:   req.PostalCode,
-		Country:      req.Country,
-		IsActive:     true,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:                    uuid.New(),
+		CustomerType:          req.CustomerType,
+		TaxID:                 req.TaxID,
+		Name:                  req.Name,
+		Email:                 req.Email,
+		Phone:                 req.Phone,
+		Address:               req.Address,
+		City:                  req.City,
+		State:                 req.State,
+		PostalCode:            req.PostalCode,
+		Country:               req.Country,
+		IsActive:              true,
+		IsGovernmentEntity:    isGovernmentEntity,
+		DefaultWithholdingRate: req.DefaultWithholdingRate,
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
 	}
 
 	if customer.Country == nil {
@@ -51,7 +69,7 @@ func (s *Service) Create(ctx context.Context, schema, userID string, req *Create
 		return nil, err
 	}
 
-	logger.Info("Customer created", "id", customer.ID, "schema", schema)
+	logger.Info("Customer created", "id", customer.ID, "schema", schema, "is_government_entity", isGovernmentEntity)
 
 	return customer.ToResponse(), nil
 }
@@ -119,6 +137,22 @@ func (s *Service) Update(ctx context.Context, schema, id string, req *UpdateCust
 	}
 	if req.IsActive != nil {
 		customer.IsActive = *req.IsActive
+	}
+	if req.IsGovernmentEntity != nil {
+		isGovernmentEntity := *req.IsGovernmentEntity
+		// Validar que si se marca como gubernamental, tenga RNC
+		if isGovernmentEntity {
+			if customer.TaxID == nil || *customer.TaxID == "" {
+				return nil, fmt.Errorf("no se puede marcar como entidad gubernamental sin RNC válido. Por favor agregue el RNC primero")
+			}
+			if len(*customer.TaxID) != 9 && len(*customer.TaxID) != 11 {
+				return nil, fmt.Errorf("RNC debe tener 9 o 11 dígitos")
+			}
+		}
+		customer.IsGovernmentEntity = isGovernmentEntity
+	}
+	if req.DefaultWithholdingRate != nil {
+		customer.DefaultWithholdingRate = req.DefaultWithholdingRate
 	}
 
 	customer.UpdatedAt = time.Now()

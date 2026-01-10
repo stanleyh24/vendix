@@ -9,17 +9,22 @@ import (
 	"vendix/internal/database"
 	"vendix/internal/dgii"
 	"vendix/internal/logger"
+	"vendix/internal/modules/notifications"
+	"vendix/internal/modules/tenants"
 
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
 
 // Task types
 const (
-	TaskSendEmail               = "task:send_email"
-	TaskSignInvoice             = "task:sign_invoice"
-	TaskSendInvoiceToDGII       = "task:send_invoice_dgii"
-	TaskProcessRecurringBilling = "task:process_recurring_billing"
-	TaskGenerateMonthlyReports  = "task:generate_monthly_reports"
+	TaskSendEmail                 = "task:send_email"
+	TaskSignInvoice               = "task:sign_invoice"
+	TaskSendInvoiceToDGII         = "task:send_invoice_dgii"
+	TaskProcessRecurringBilling   = "task:process_recurring_billing"
+	TaskGenerateMonthlyReports    = "task:generate_monthly_reports"
+	TaskCheckPurchaseDueDates     = "task:check_purchase_due_dates"
+	TaskSchedulePurchaseDueChecks = "task:schedule_purchase_due_checks" // Scheduler task that creates jobs for all tenants
 )
 
 type Handlers struct {
@@ -146,6 +151,137 @@ func (h *Handlers) HandleGenerateMonthlyReports(ctx context.Context, task *asynq
 	// 4. Send notifications to tenants
 
 	logger.Info("Monthly reports generated successfully")
+
+	return nil
+}
+
+// CheckPurchaseDueDatesPayload represents the payload for checking purchase due dates
+type CheckPurchaseDueDatesPayload struct {
+	TenantID   string `json:"tenant_id"`
+	Schema     string `json:"schema"`
+	DaysBefore int    `json:"days_before"` // Default: 7 days
+}
+
+// HandleCheckPurchaseDueDates checks for purchases due soon or overdue and creates notifications
+func (h *Handlers) HandleCheckPurchaseDueDates(ctx context.Context, task *asynq.Task) error {
+	var payload CheckPurchaseDueDatesPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	}
+
+	if payload.DaysBefore == 0 {
+		payload.DaysBefore = 7 // Default: check 7 days before
+	}
+
+	logger.Info("Checking purchase due dates",
+		"tenant_id", payload.TenantID,
+		"schema", payload.Schema,
+		"days_before", payload.DaysBefore,
+	)
+
+	// Import notifications service
+	// Note: We need to import it here to avoid circular dependencies
+	// For now, we'll use the repository directly
+	tenantID, err := uuid.Parse(payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("invalid tenant ID: %w", err)
+	}
+
+	// Get notifications repository
+	notificationsRepo := notifications.NewRepository(h.db)
+	
+	// Get purchases due soon
+	dueSoon, err := notificationsRepo.GetPurchasesDueSoon(ctx, payload.Schema, payload.DaysBefore)
+	if err != nil {
+		logger.Error("Failed to get purchases due soon", "error", err)
+		return fmt.Errorf("failed to get purchases due soon: %w", err)
+	}
+
+	// Get overdue purchases
+	overdue, err := notificationsRepo.GetPurchasesOverdue(ctx, payload.Schema)
+	if err != nil {
+		logger.Error("Failed to get overdue purchases", "error", err)
+		return fmt.Errorf("failed to get overdue purchases: %w", err)
+	}
+
+	// Create notifications service
+	notificationsSvc := notifications.NewService(h.db, h.cfg)
+
+	// Check and create notifications
+	if err := notificationsSvc.CheckPurchaseDueNotifications(ctx, payload.Schema, tenantID, payload.DaysBefore); err != nil {
+		logger.Error("Failed to create purchase due notifications", "error", err)
+		return fmt.Errorf("failed to create notifications: %w", err)
+	}
+
+	logger.Info("Purchase due dates checked",
+		"due_soon_count", len(dueSoon),
+		"overdue_count", len(overdue),
+	)
+
+	return nil
+}
+
+// HandleSchedulePurchaseDueChecks is a scheduler task that creates individual jobs for each active tenant
+func (h *Handlers) HandleSchedulePurchaseDueChecks(ctx context.Context, task *asynq.Task) error {
+	logger.Info("Scheduling purchase due date checks for all active tenants")
+
+	// Get all active tenants
+	tenantRepo := tenants.NewRepository(h.db)
+	activeTenants, err := tenantRepo.ListActive(ctx)
+	if err != nil {
+		logger.Error("Failed to get active tenants", "error", err)
+		return fmt.Errorf("failed to get active tenants: %w", err)
+	}
+
+	if len(activeTenants) == 0 {
+		logger.Info("No active tenants found, skipping purchase due date checks")
+		return nil
+	}
+
+	// Create a job client to enqueue tasks
+	client := asynq.NewClient(asynq.RedisClientOpt{
+		Addr:     h.cfg.RedisAddr,
+		Password: h.cfg.RedisPassword,
+		DB:       h.cfg.RedisDB,
+	})
+	defer client.Close()
+
+	// Create a job for each active tenant
+	enqueuedCount := 0
+	for _, tenant := range activeTenants {
+		payload, err := json.Marshal(CheckPurchaseDueDatesPayload{
+			TenantID:   tenant.ID.String(),
+			Schema:     tenant.SchemaName,
+			DaysBefore: 7, // Check 7 days before due date
+		})
+		if err != nil {
+			logger.Error("Failed to marshal payload for tenant", "tenant_id", tenant.ID, "error", err)
+			continue
+		}
+
+		task := asynq.NewTask(TaskCheckPurchaseDueDates, payload, asynq.Queue("default"))
+		_, err = client.EnqueueContext(ctx, task)
+		if err != nil {
+			logger.Error("Failed to enqueue purchase due date check for tenant",
+				"tenant_id", tenant.ID,
+				"tenant_name", tenant.Name,
+				"error", err,
+			)
+			continue
+		}
+
+		enqueuedCount++
+		logger.Debug("Enqueued purchase due date check",
+			"tenant_id", tenant.ID,
+			"tenant_name", tenant.Name,
+			"schema", tenant.SchemaName,
+		)
+	}
+
+	logger.Info("Scheduled purchase due date checks",
+		"total_tenants", len(activeTenants),
+		"enqueued_jobs", enqueuedCount,
+	)
 
 	return nil
 }

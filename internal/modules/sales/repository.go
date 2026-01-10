@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"vendix/internal/database"
 
@@ -89,7 +90,7 @@ func (r *Repository) GetByID(ctx context.Context, schema string, id uuid.UUID) (
 func (r *Repository) getSaleLines(ctx context.Context, schema string, saleID uuid.UUID) ([]SaleLine, error) {
 	var lines []SaleLine
 	query := fmt.Sprintf(`
-		SELECT id, sale_id, product_id, line_number, description, quantity, unit_price, tax_rate, tax_amount, line_total, created_at
+		SELECT id, sale_id, product_id, line_number, description, quantity, COALESCE(returned_quantity, 0) as returned_quantity, unit_price, tax_rate, tax_amount, line_total, created_at
 		FROM %s.sale_lines
 		WHERE sale_id = $1
 		ORDER BY line_number
@@ -200,6 +201,7 @@ type DailySalesSummary struct {
 	TotalITBIS        float64 `db:"total_itbis" json:"total_itbis"`
 	TotalSelective    float64 `db:"total_selective" json:"total_selective"`
 	TotalAmount       float64 `db:"total_amount" json:"total_amount"`
+	TotalCost         float64 `db:"total_cost" json:"total_cost"` // Costo total de productos vendidos (COGS)
 	TotalTransactions int     `db:"total_transactions" json:"total_transactions"`
 }
 
@@ -226,13 +228,16 @@ func (r *Repository) GetDailySalesSummary(ctx context.Context, schema string, da
 			COALESCE(SUM(s.tax_amount), 0) as total_itbis,
 			0.0 as total_selective,
 			COALESCE(SUM(s.total), 0) as total_amount,
-			COUNT(*) as total_transactions
+			COALESCE(SUM(sl.quantity * COALESCE(p.cost, 0)), 0) as total_cost,
+			COUNT(DISTINCT s.id) as total_transactions
 		FROM %s.sales s
 		LEFT JOIN %s.invoices i ON s.invoice_id = i.id
+		LEFT JOIN %s.sale_lines sl ON s.id = sl.sale_id
+		LEFT JOIN %s.products p ON sl.product_id = p.id
 		WHERE DATE(s.created_at) = $1
 		  AND s.status = 'completed'
 		GROUP BY DATE(s.created_at)
-	`, schema, schema)
+	`, schema, schema, schema, schema)
 
 	err := r.db.GetContext(ctx, &summary, query, date)
 	if err != nil {
@@ -245,4 +250,50 @@ func (r *Repository) GetDailySalesSummary(ctx context.Context, schema string, da
 	}
 
 	return &summary, nil
+}
+
+// GetSalesReportData gets sales data for reporting within a date range
+func (r *Repository) GetSalesReportData(ctx context.Context, schema string, startDate, endDate time.Time) ([]SalesReportRow, error) {
+	var rows []SalesReportRow
+	query := fmt.Sprintf(`
+		SELECT 
+			s.id::text as sale_id,
+			s.sale_number,
+			DATE(s.created_at) as sale_date,
+			s.customer_id::text as customer_id,
+			COALESCE(c.name, 'Cliente Genérico') as customer_name,
+			s.payment_type,
+			s.subtotal,
+			s.tax_amount,
+			s.total,
+			s.status,
+			COALESCE(SUM(sl.quantity * COALESCE(p.cost, 0)), 0) as cost
+		FROM %s.sales s
+		LEFT JOIN %s.customers c ON s.customer_id = c.id
+		LEFT JOIN %s.sale_lines sl ON s.id = sl.sale_id
+		LEFT JOIN %s.products p ON sl.product_id = p.id
+		WHERE DATE(s.created_at) >= $1
+		  AND DATE(s.created_at) <= $2
+		  AND s.status = 'completed'
+		GROUP BY s.id, s.sale_number, DATE(s.created_at), s.customer_id, c.name, s.payment_type, s.subtotal, s.tax_amount, s.total, s.status
+		ORDER BY s.created_at DESC
+	`, schema, schema, schema, schema)
+
+	err := r.db.SelectContext(ctx, &rows, query, startDate, endDate)
+	return rows, err
+}
+
+// SalesReportRow represents a row in the sales report query
+type SalesReportRow struct {
+	SaleID       string     `db:"sale_id"`
+	SaleNumber   string     `db:"sale_number"`
+	SaleDate     time.Time  `db:"sale_date"`
+	CustomerID   *string    `db:"customer_id"`
+	CustomerName string     `db:"customer_name"`
+	PaymentType  string     `db:"payment_type"`
+	Subtotal     float64    `db:"subtotal"`
+	TaxAmount    float64    `db:"tax_amount"`
+	Total        float64    `db:"total"`
+	Status       string     `db:"status"`
+	Cost         float64    `db:"cost"`
 }

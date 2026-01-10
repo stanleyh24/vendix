@@ -21,7 +21,7 @@ const (
 	NCFTypeDebitNote    NCFType = "03" // Nota de Débito
 	NCFTypeCreditNote   NCFType = "04" // Nota de Crédito
 	NCFTypeSupplier     NCFType = "11" // Regímenes Especiales
-	NCFTypeGov          NCFType = "12" // Gubernamental
+	NCFTypeGov          NCFType = "15" // Gubernamental (Facturas Gubernamentales)
 	NCFTypeExport       NCFType = "13" // Exportaciones
 	NCFTypeImport       NCFType = "14" // Importaciones
 )
@@ -84,6 +84,13 @@ func (s *Service) GenerateNCF(ctx context.Context, schema string, ncfType NCFTyp
 		prefix = config.NCFCreditNotePrefix
 		sequence = config.NCFCreditNoteSequence
 		endRange = getNCFEndRange(config, "credit_note")
+	case NCFTypeGov:
+		prefix = config.NCFGovPrefix
+		sequence = config.NCFGovSequence
+		endRange = config.NCFGovEndRange
+		if endRange == 0 {
+			endRange = getNCFEndRange(config, "gov")
+		}
 	default:
 		return nil, fmt.Errorf("unsupported NCF type: %s", ncfType)
 	}
@@ -160,10 +167,10 @@ func (s *Service) ValidateNCF(ncf string) error {
 		return fmt.Errorf("NCF prefix invalid: must be 3 alphanumeric characters")
 	}
 
-	// Validate type (2 digits, 01-14)
+	// Validate type (2 digits, 01-15)
 	ncfType := cleaned[3:5]
-	if matched, _ := regexp.MatchString("^(01|02|03|04|11|12|13|14)$", ncfType); !matched {
-		return fmt.Errorf("NCF type invalid: must be 01-14")
+	if matched, _ := regexp.MatchString("^(01|02|03|04|11|12|13|14|15)$", ncfType); !matched {
+		return fmt.Errorf("NCF type invalid: must be 01-15")
 	}
 
 	// Validate sequence (11 digits)
@@ -292,6 +299,8 @@ func (s *Service) incrementNCFSequence(ctx context.Context, schema string, ncfTy
 		updateReq.NCFDebitNoteSequence = &newSequence
 	case NCFTypeCreditNote:
 		updateReq.NCFCreditNoteSequence = &newSequence
+	case NCFTypeGov:
+		updateReq.NCFGovSequence = &newSequence
 	default:
 		return fmt.Errorf("unsupported NCF type: %s", ncfType)
 	}
@@ -324,11 +333,13 @@ func GetNCFTypeFromString(s string) (NCFType, error) {
 	case "11":
 		return NCFTypeSupplier, nil
 	case "12":
-		return NCFTypeGov, nil
+		return NCFTypeGov, nil // Mantener compatibilidad con tipo 12
 	case "13":
 		return NCFTypeExport, nil
 	case "14":
 		return NCFTypeImport, nil
+	case "15":
+		return NCFTypeGov, nil // Tipo 15 es Gubernamental (más común)
 	default:
 		return "", fmt.Errorf("invalid NCF type: %s", s)
 	}

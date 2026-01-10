@@ -8,6 +8,7 @@ import (
 	"vendix/internal/config"
 	"vendix/internal/database"
 	"vendix/internal/logger"
+	"vendix/internal/modules/customers"
 	"vendix/internal/modules/invoices"
 	"vendix/internal/modules/products"
 
@@ -15,19 +16,21 @@ import (
 )
 
 type Service struct {
-	repo         *Repository
-	productsRepo *products.Repository
-	invoiceSvc   *invoices.Service
-	cfg          *config.Config
+	repo          *Repository
+	productsRepo  *products.Repository
+	customersRepo *customers.Repository
+	invoiceSvc    *invoices.Service
+	cfg           *config.Config
 }
 
 func NewService(db *database.DB, cfg *config.Config) *Service {
 	invoiceSvc, _ := invoices.NewService(db, cfg)
 	return &Service{
-		repo:         NewRepository(db),
-		productsRepo: products.NewRepository(db),
-		invoiceSvc:   invoiceSvc,
-		cfg:          cfg,
+		repo:          NewRepository(db),
+		productsRepo:  products.NewRepository(db),
+		customersRepo: customers.NewRepository(db),
+		invoiceSvc:    invoiceSvc,
+		cfg:           cfg,
 	}
 }
 
@@ -141,6 +144,17 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateSaleRequ
 		}
 	}
 
+	// Obtener información del cliente para validaciones
+	var customer *customers.Customer
+	isGenericCustomer := *customerID == uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	if !isGenericCustomer {
+		var err error
+		customer, err = s.customersRepo.GetByID(ctx, schema, *customerID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get customer: %w", err)
+		}
+	}
+
 	// Determinar tipo de NCF (del request o por defecto según cliente)
 	ncfType := req.NCFType
 	if ncfType == "" {
@@ -149,13 +163,26 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateSaleRequ
 	}
 	
 	// Validar que sea un tipo válido
-	if ncfType != "01" && ncfType != "02" {
-		return nil, fmt.Errorf("invalid ncf_type: must be '01' (Crédito Fiscal) or '02' (Consumidor Final)")
+	if ncfType != "01" && ncfType != "02" && ncfType != "15" {
+		return nil, fmt.Errorf("invalid ncf_type: must be '01' (Crédito Fiscal), '02' (Consumidor Final), or '15' (Gubernamental)")
 	}
 
 	// Validar que el crédito fiscal solo se use con clientes específicos (no genéricos)
-	if ncfType == "01" && *customerID == uuid.MustParse("00000000-0000-0000-0000-000000000001") {
+	if ncfType == "01" && isGenericCustomer {
 		return nil, fmt.Errorf("NCF tipo '01' (Crédito Fiscal) requiere un cliente específico con RNC, no se puede usar con cliente genérico")
+	}
+
+	// Validar que el NCF tipo 15 (Gubernamental) solo se use con clientes gubernamentales
+	if ncfType == "15" {
+		if isGenericCustomer {
+			return nil, fmt.Errorf("NCF tipo '15' (Gubernamental) requiere un cliente específico que sea entidad gubernamental")
+		}
+		if customer == nil || !customer.IsGovernmentEntity {
+			return nil, fmt.Errorf("NCF tipo '15' (Gubernamental) solo se puede usar con clientes que sean entidades gubernamentales")
+		}
+		if customer.TaxID == nil || *customer.TaxID == "" {
+			return nil, fmt.Errorf("cliente gubernamental debe tener RNC válido para usar NCF tipo '15'")
+		}
 	}
 
 	// Crear factura automáticamente con status "paid"
@@ -167,6 +194,9 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateSaleRequ
 		Status:     stringPtr("paid"),               // Las facturas de ventas son pagadas automáticamente
 		Notes:      req.Notes,
 		Lines:      convertSaleLinesToInvoiceLines(req.Lines),
+		WithholdingTaxType: req.WithholdingTaxType,
+		WithholdingRate:    req.WithholdingRate,
+		WithholdingExempt:  req.WithholdingExempt,
 	}
 
 	invoice, err := s.invoiceSvc.Create(ctx, schema, invoiceReq)

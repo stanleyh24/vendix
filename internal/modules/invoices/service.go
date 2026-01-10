@@ -10,6 +10,7 @@ import (
 	"vendix/internal/database"
 	"vendix/internal/dgii"
 	"vendix/internal/logger"
+	"vendix/internal/modules/customers"
 	"vendix/internal/modules/ncf"
 	"vendix/internal/modules/products"
 	"vendix/internal/modules/tenantconfig"
@@ -20,13 +21,14 @@ import (
 )
 
 type Service struct {
-	repo         *Repository
-	productsRepo *products.Repository
-	storage      *storage.Client
-	dgiiService  *dgii.Service
-	ncfService   *ncf.Service
-	configRepo   *tenantconfig.Repository
-	cfg          *config.Config
+	repo          *Repository
+	productsRepo  *products.Repository
+	customersRepo *customers.Repository
+	storage       *storage.Client
+	dgiiService   *dgii.Service
+	ncfService    *ncf.Service
+	configRepo    *tenantconfig.Repository
+	cfg           *config.Config
 }
 
 func NewService(db *database.DB, cfg *config.Config) (*Service, error) {
@@ -40,13 +42,14 @@ func NewService(db *database.DB, cfg *config.Config) (*Service, error) {
 	}
 
 	return &Service{
-		repo:         NewRepository(db),
-		productsRepo: products.NewRepository(db),
-		storage:      storageClient,
-		dgiiService:  dgii.NewService(cfg),
-		ncfService:   ncf.NewService(db),
-		configRepo:   tenantconfig.NewRepository(db),
-		cfg:          cfg,
+		repo:          NewRepository(db),
+		productsRepo:  products.NewRepository(db),
+		customersRepo: customers.NewRepository(db),
+		storage:       storageClient,
+		dgiiService:   dgii.NewService(cfg),
+		ncfService:    ncf.NewService(db),
+		configRepo:    tenantconfig.NewRepository(db),
+		cfg:           cfg,
 	}, nil
 }
 
@@ -100,18 +103,40 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateInvoiceR
 		return nil, fmt.Errorf("failed to generate invoice number: %w", err)
 	}
 
+	// Obtener información del cliente para validaciones
+	var customer *customers.Customer
+	if !isGenericCustomer {
+		var err error
+		customer, err = s.customersRepo.GetByID(ctx, schema, *customerID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get customer: %w", err)
+		}
+	}
+
 	// Validar y establecer tipo de NCF
 	ncfType := req.NCFType
 	if ncfType == "" {
 		ncfType = "02" // Por defecto: Consumidor Final
 	}
 	// Validar que sea un tipo válido
-	if ncfType != "01" && ncfType != "02" {
-		return nil, fmt.Errorf("invalid ncf_type: must be '01' (Crédito Fiscal) or '02' (Consumidor Final)")
+	if ncfType != "01" && ncfType != "02" && ncfType != "15" {
+		return nil, fmt.Errorf("invalid ncf_type: must be '01' (Crédito Fiscal), '02' (Consumidor Final), or '15' (Gubernamental)")
 	}
 	// Validar que el crédito fiscal solo se use con clientes que no sean genéricos
 	if ncfType == "01" && isGenericCustomer {
 		return nil, fmt.Errorf("NCF tipo '01' (Crédito Fiscal) requiere un cliente específico con RNC, no se puede usar con cliente genérico")
+	}
+	// Validar que el NCF tipo 15 (Gubernamental) solo se use con clientes gubernamentales
+	if ncfType == "15" {
+		if isGenericCustomer {
+			return nil, fmt.Errorf("NCF tipo '15' (Gubernamental) requiere un cliente específico que sea entidad gubernamental")
+		}
+		if customer == nil || !customer.IsGovernmentEntity {
+			return nil, fmt.Errorf("NCF tipo '15' (Gubernamental) solo se puede usar con clientes que sean entidades gubernamentales")
+		}
+		if customer.TaxID == nil || *customer.TaxID == "" {
+			return nil, fmt.Errorf("cliente gubernamental debe tener RNC válido para usar NCF tipo '15'")
+		}
 	}
 
 	// Determinar el status de la factura
@@ -172,6 +197,38 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateInvoiceR
 	invoice.Subtotal = subtotal
 	invoice.TaxAmount = taxAmount
 	invoice.Total = subtotal + taxAmount
+
+	// Calcular retenciones si aplica
+	invoice.WithholdingExempt = false
+	if req.WithholdingExempt != nil {
+		invoice.WithholdingExempt = *req.WithholdingExempt
+	}
+
+	// Calcular retención si el cliente es gubernamental y no está exento
+	if !isGenericCustomer && customer != nil && customer.IsGovernmentEntity && !invoice.WithholdingExempt && ncfType == "15" {
+		withholdingRate := 0.05 // 5% ISR por defecto
+		
+		// Usar tasa del request si está especificada
+		if req.WithholdingRate != nil && *req.WithholdingRate > 0 {
+			withholdingRate = *req.WithholdingRate
+		} else if customer.DefaultWithholdingRate != nil && *customer.DefaultWithholdingRate > 0 {
+			// Usar tasa por defecto del cliente
+			withholdingRate = *customer.DefaultWithholdingRate
+		}
+
+		withholdingAmount := invoice.Total * withholdingRate
+		invoice.WithholdingTaxAmount = &withholdingAmount
+		taxType := "isr"
+		if req.WithholdingTaxType != nil && *req.WithholdingTaxType != "" {
+			taxType = *req.WithholdingTaxType
+		}
+		invoice.WithholdingTaxType = &taxType
+		invoice.WithholdingRate = &withholdingRate
+		invoice.NetAmount = invoice.Total - withholdingAmount
+	} else {
+		// Si no hay retención, el monto neto es igual al total
+		invoice.NetAmount = invoice.Total
+	}
 
 	// Generate NCF if enabled (NCF is auto-generated, not provided in request)
 	if true {
@@ -335,7 +392,7 @@ func (s *Service) generateAndSavePDF(ctx context.Context, schema string, invoice
 
 // GetPDFBytes retrieves the PDF bytes for an invoice
 func (s *Service) GetPDFBytes(ctx context.Context, schema string, invoiceID uuid.UUID) ([]byte, error) {
-	invoice, err := s.repo.GetByID(ctx, schema, invoiceID)
+	invoice, err := s.repo.GetByID(ctx, schema, invoiceID, []string{})
 	if err != nil {
 		return nil, fmt.Errorf("invoice not found: %w", err)
 	}
@@ -346,7 +403,7 @@ func (s *Service) GetPDFBytes(ctx context.Context, schema string, invoiceID uuid
 			return nil, fmt.Errorf("failed to generate PDF: %w", err)
 		}
 		// Reload invoice to get the updated PDF URL
-		invoice, err = s.repo.GetByID(ctx, schema, invoiceID)
+		invoice, err = s.repo.GetByID(ctx, schema, invoiceID, []string{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to reload invoice: %w", err)
 		}
@@ -372,7 +429,7 @@ func (s *Service) GetPDFBytes(ctx context.Context, schema string, invoiceID uuid
 
 // GetXMLBytes retrieves the XML bytes for an invoice
 func (s *Service) GetXMLBytes(ctx context.Context, schema string, invoiceID uuid.UUID) ([]byte, error) {
-	invoice, err := s.repo.GetByID(ctx, schema, invoiceID)
+	invoice, err := s.repo.GetByID(ctx, schema, invoiceID, []string{})
 	if err != nil {
 		return nil, fmt.Errorf("invoice not found: %w", err)
 	}
@@ -400,13 +457,13 @@ func (s *Service) GetXMLBytes(ctx context.Context, schema string, invoiceID uuid
 	return xmlBytes, nil
 }
 
-func (s *Service) GetByID(ctx context.Context, schema string, id string) (*Invoice, error) {
+func (s *Service) GetByID(ctx context.Context, schema string, id string, includes []string) (*Invoice, error) {
 	invoiceID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, fmt.Errorf("invalid invoice ID: %w", err)
 	}
 
-	invoice, err := s.repo.GetByID(ctx, schema, invoiceID)
+	invoice, err := s.repo.GetByID(ctx, schema, invoiceID, includes)
 	if err != nil {
 		return nil, fmt.Errorf("invoice not found: %w", err)
 	}
@@ -414,8 +471,8 @@ func (s *Service) GetByID(ctx context.Context, schema string, id string) (*Invoi
 	return invoice, nil
 }
 
-func (s *Service) List(ctx context.Context, schema string, status *string) ([]*Invoice, error) {
-	invoices, err := s.repo.List(ctx, schema, status)
+func (s *Service) List(ctx context.Context, schema string, status *string, includes []string) ([]*Invoice, error) {
+	invoices, err := s.repo.List(ctx, schema, status, includes)
 	if err != nil {
 		logger.Error("Failed to list invoices", "error", err)
 		return nil, fmt.Errorf("failed to list invoices: %w", err)
@@ -434,7 +491,7 @@ func (s *Service) Update(ctx context.Context, schema string, id string, req *Upd
 		return nil, fmt.Errorf("invalid invoice ID: %w", err)
 	}
 
-	invoice, err := s.repo.GetByID(ctx, schema, invoiceID)
+	invoice, err := s.repo.GetByID(ctx, schema, invoiceID, []string{})
 	if err != nil {
 		return nil, fmt.Errorf("invoice not found: %w", err)
 	}
@@ -467,7 +524,7 @@ func (s *Service) SendInvoice(ctx context.Context, schema string, id string) err
 	}
 
 	// Get invoice
-	invoice, err := s.repo.GetByID(ctx, schema, invoiceID)
+	invoice, err := s.repo.GetByID(ctx, schema, invoiceID, []string{})
 	if err != nil {
 		return fmt.Errorf("invoice not found: %w", err)
 	}
@@ -737,4 +794,136 @@ func (s *Service) CancelInvoice(ctx context.Context, schema string, id string) e
 
 	logger.Info("Invoice cancelled", "id", id)
 	return nil
+}
+
+// AllocatePayment allocates a payment to one or more invoices
+func (s *Service) AllocatePayment(ctx context.Context, schema string, req *CreatePaymentAllocationRequest) error {
+	// Validate that payment exists and get its amount
+	// Note: We need to import payments module or check payment via repository
+	// For now, we'll calculate total allocation amount
+	totalAllocation := 0.0
+	for _, alloc := range req.Allocations {
+		totalAllocation += alloc.Amount
+	}
+
+	// Start transaction
+	tx, err := s.repo.db.DB.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Create allocations and update invoices
+	for _, allocReq := range req.Allocations {
+		// Verify invoice exists and get current balance
+		invoice, err := s.repo.GetByID(ctx, schema, allocReq.InvoiceID, []string{})
+		if err != nil {
+			return fmt.Errorf("invoice not found: %w", err)
+		}
+
+		// Calculate current balance
+		currentBalance := invoice.Total - invoice.PaidAmount
+		if allocReq.Amount > currentBalance {
+			return fmt.Errorf("allocation amount (%.2f) exceeds invoice balance (%.2f) for invoice %s", 
+				allocReq.Amount, currentBalance, invoice.InvoiceNumber)
+		}
+
+		// Create allocation record
+		allocation := &PaymentAllocation{
+			ID:        uuid.New(),
+			PaymentID: req.PaymentID,
+			InvoiceID: allocReq.InvoiceID,
+			Amount:    allocReq.Amount,
+			CreatedAt: time.Now(),
+		}
+
+		// Insert allocation
+		allocQuery := fmt.Sprintf(`
+			INSERT INTO %s.payment_allocations (id, payment_id, invoice_id, amount, created_at)
+			VALUES ($1, $2, $3, $4, $5)
+		`, schema)
+		_, err = tx.ExecContext(ctx, allocQuery, allocation.ID, allocation.PaymentID, allocation.InvoiceID, allocation.Amount, allocation.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("failed to create allocation: %w", err)
+		}
+
+		// Update invoice paid_amount
+		newPaidAmount := invoice.PaidAmount + allocReq.Amount
+		updateQuery := fmt.Sprintf(`
+			UPDATE %s.invoices
+			SET paid_amount = $1, updated_at = $2
+			WHERE id = $3
+		`, schema)
+		_, err = tx.ExecContext(ctx, updateQuery, newPaidAmount, time.Now(), allocReq.InvoiceID)
+		if err != nil {
+			return fmt.Errorf("failed to update invoice paid amount: %w", err)
+		}
+
+		// Update invoice status if fully paid
+		newStatus := invoice.Status
+		if newPaidAmount >= invoice.Total {
+			newStatus = string(StatusPaid)
+		} else if invoice.Status == string(StatusOverdue) {
+			// If partially paid, keep as overdue if still past due date
+			if time.Now().After(invoice.DueDate) {
+				newStatus = string(StatusOverdue)
+			} else {
+				newStatus = string(StatusPending)
+			}
+		}
+
+		if newStatus != invoice.Status {
+			statusQuery := fmt.Sprintf(`
+				UPDATE %s.invoices
+				SET status = $1, updated_at = $2
+				WHERE id = $3
+			`, schema)
+			_, err = tx.ExecContext(ctx, statusQuery, newStatus, time.Now(), allocReq.InvoiceID)
+			if err != nil {
+				return fmt.Errorf("failed to update invoice status: %w", err)
+			}
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	logger.Info("Payment allocated to invoices", "payment_id", req.PaymentID, "allocations", len(req.Allocations))
+	return nil
+}
+
+// GetAccountsReceivableReport generates an accounts receivable aging report
+func (s *Service) GetAccountsReceivableReport(ctx context.Context, schema string, asOfDate *string) (*AccountsReceivableReport, error) {
+	var reportDate time.Time
+	if asOfDate != nil && *asOfDate != "" {
+		var err error
+		reportDate, err = time.Parse("2006-01-02", *asOfDate)
+		if err != nil {
+			return nil, fmt.Errorf("invalid date format: %w", err)
+		}
+	} else {
+		reportDate = time.Now()
+	}
+
+	return s.repo.GetAccountsReceivableReport(ctx, schema, reportDate)
+}
+
+// GetInvoiceAllocations gets all payment allocations for an invoice
+func (s *Service) GetInvoiceAllocations(ctx context.Context, schema string, invoiceID string) ([]*PaymentAllocation, error) {
+	id, err := uuid.Parse(invoiceID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid invoice ID: %w", err)
+	}
+	return s.repo.GetAllocationsByInvoice(ctx, schema, id)
+}
+
+// GetPaymentAllocations gets all allocations for a payment
+func (s *Service) GetPaymentAllocations(ctx context.Context, schema string, paymentID string) ([]*PaymentAllocation, error) {
+	id, err := uuid.Parse(paymentID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid payment ID: %w", err)
+	}
+	return s.repo.GetAllocationsByPayment(ctx, schema, id)
 }

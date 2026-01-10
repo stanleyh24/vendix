@@ -14,9 +14,9 @@ import (
 )
 
 type Service struct {
-	repo         *Repository
-	salesRepo    *sales.Repository
-	cfg          *config.Config
+	repo      *Repository
+	salesRepo *sales.Repository
+	cfg       *config.Config
 }
 
 func NewService(db *database.DB, cfg *config.Config) *Service {
@@ -605,6 +605,44 @@ func (s *Service) GenerateDailySalesJournalEntry(ctx context.Context, schema str
 		}
 	}
 
+	// 7. COSTO DE VENTAS (COGS) - Registrar el costo de los productos vendidos
+	// Solo se registra si hay costos definidos en los productos
+	if summary.TotalCost > 0 {
+		// DEBE: Costo de Ventas (5100) - aumenta el gasto
+		cogsAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypePurchaseExpense, "5100", "Costo de Ventas")
+		if err != nil {
+			logger.Warn("Failed to get COGS account, skipping cost entry", "error", err)
+		} else {
+			entry.Lines = append(entry.Lines, JournalEntryLine{
+				ID:             uuid.New(),
+				JournalEntryID: entry.ID,
+				AccountCode:    cogsAccount.AccountCode,
+				AccountName:    cogsAccount.AccountName,
+				Debit:          summary.TotalCost,
+				Credit:         0,
+				Description:    stringPtr(fmt.Sprintf("Costo de productos vendidos - %d transacciones", summary.TotalTransactions)),
+				CreatedAt:      time.Now(),
+			})
+
+			// HABER: Inventario (1131) - disminuye el inventario
+			inventoryAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypePurchaseInventory, "1131", "Inventario de Mercancías")
+			if err != nil {
+				logger.Warn("Failed to get Inventory account, skipping cost entry", "error", err)
+			} else {
+				entry.Lines = append(entry.Lines, JournalEntryLine{
+					ID:             uuid.New(),
+					JournalEntryID: entry.ID,
+					AccountCode:    inventoryAccount.AccountCode,
+					AccountName:    inventoryAccount.AccountName,
+					Debit:          0,
+					Credit:         summary.TotalCost,
+					Description:    stringPtr(fmt.Sprintf("Salida de inventario por ventas - %d transacciones", summary.TotalTransactions)),
+					CreatedAt:      time.Now(),
+				})
+			}
+		}
+	}
+
 	// Validate that debits equal credits
 	totalDebit := 0.0
 	totalCredit := 0.0
@@ -1008,6 +1046,74 @@ func (s *Service) GenerateExpenseJournalEntry(ctx context.Context, schema string
 	
 	logger.Info("Expense journal entry created", "entry_number", entry.EntryNumber, "expense_id", paymentID)
 	return entry, nil
+}
+
+// GetAccountsPayableBalance calculates the current accounts payable balance
+// based on journal entries
+func (s *Service) GetAccountsPayableBalance(ctx context.Context, schema string) (float64, error) {
+	// Get the accounts payable account code
+	apAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypePurchaseAP, "2111", "Proveedores")
+	if err != nil {
+		return 0, fmt.Errorf("failed to get accounts payable account: %w", err)
+	}
+
+	// Calculate balance from journal entries
+	balance, err := s.repo.GetAccountBalanceFromEntries(ctx, schema, apAccount.AccountCode)
+	if err != nil {
+		return 0, fmt.Errorf("failed to calculate balance: %w", err)
+	}
+
+	return balance, nil
+}
+
+// RecalculateAccountsPayableBalance recalculates the accounts payable balance
+// based on journal entries and updates the account balance
+func (s *Service) RecalculateAccountsPayableBalance(ctx context.Context, schema string) error {
+	// Get the accounts payable account code
+	apAccount, err := s.GetAccountForTransaction(ctx, schema, TransactionTypePurchaseAP, "2111", "Proveedores")
+	if err != nil {
+		return fmt.Errorf("failed to get accounts payable account: %w", err)
+	}
+
+	// Calculate balance from journal entries
+	balance, err := s.repo.GetAccountBalanceFromEntries(ctx, schema, apAccount.AccountCode)
+	if err != nil {
+		return fmt.Errorf("failed to calculate balance: %w", err)
+	}
+
+	// Update the account balance
+	if err := s.repo.UpdateAccountBalance(ctx, schema, apAccount.AccountCode, balance); err != nil {
+		return fmt.Errorf("failed to update account balance: %w", err)
+	}
+
+	logger.Info("Accounts payable balance recalculated", "account_code", apAccount.AccountCode, "balance", balance)
+	return nil
+}
+
+// GetAccountsPayableSummary returns a summary of accounts payable
+// including total outstanding, number of unpaid purchases, etc.
+// Note: This method now only returns the account balance from the chart of accounts.
+// For detailed aging report, use the reports module.
+func (s *Service) GetAccountsPayableSummary(ctx context.Context, schema string) (*AccountsPayableSummary, error) {
+	// Get the accounts payable account balance
+	balance, err := s.GetAccountsPayableBalance(ctx, schema)
+	if err != nil {
+		logger.Warn("Failed to get accounts payable balance", "error", err)
+		balance = 0
+	}
+
+	summary := &AccountsPayableSummary{
+		AccountBalance:   balance,
+		TotalOutstanding: 0, // Use reports module for detailed aging report
+		UnpaidPurchases:  0, // Use reports module for detailed aging report
+		Total0_30:        0, // Use reports module for detailed aging report
+		Total31_60:       0, // Use reports module for detailed aging report
+		Total61_90:       0, // Use reports module for detailed aging report
+		TotalOver90:      0, // Use reports module for detailed aging report
+		LastCalculated:   time.Now(),
+	}
+
+	return summary, nil
 }
 
 // Helper function to create string pointer

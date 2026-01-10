@@ -187,6 +187,12 @@ func BuildInvoiceXMLKey(tenantSchema, invoiceID, invoiceNumber string) string {
 	return BuildObjectKey(tenantSchema, "invoices", invoiceID, filename)
 }
 
+// BuildCreditNoteXMLKey builds the object key for a credit note XML (DGII)
+func BuildCreditNoteXMLKey(tenantSchema, creditNoteID, creditNoteNumber string) string {
+	filename := fmt.Sprintf("credit-note-%s.xml", creditNoteNumber)
+	return BuildObjectKey(tenantSchema, "credit_notes", creditNoteID, filename)
+}
+
 // BuildReportKey builds the object key for a report
 // reportType is used as part of the document type (e.g., "monthly", "annual")
 func BuildReportKey(tenantSchema, reportType, reportID, filename string) string {
@@ -205,4 +211,3 @@ func BuildTenantBucketName(tenantSchema string) string {
 	// Remove any invalid characters
 	return bucketName
 }
-
