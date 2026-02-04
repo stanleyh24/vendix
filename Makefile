@@ -110,10 +110,6 @@ recreate-demo: ## Recreate demo tenant from scratch
 	@echo "Recreating demo tenant..."
 	@./scripts/recreate-demo-tenant.sh
 
-swagger: ## Generate Swagger documentation
-	@echo "Generating Swagger docs..."
-	@swag init -g cmd/api/main.go -o docs
-
 lint: ## Run linter
 	@echo "Running linter..."
 	@golangci-lint run
@@ -126,8 +122,6 @@ mod-tidy: ## Tidy go modules
 	@go mod tidy
 
 install-tools: ## Install development tools
-	@echo "Installing tools..."
-	@go install github.com/swaggo/swag/cmd/swag@latest
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 .DEFAULT_GOAL := help

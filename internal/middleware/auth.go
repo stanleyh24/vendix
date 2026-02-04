@@ -3,8 +3,8 @@ package middleware
 import (
 	"strings"
 
-	"vendix/internal/auth"
-	"vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/auth"
+	"github.com/stanleyh24/vendix/internal/config"
 
 	"github.com/gofiber/fiber/v2"
 )

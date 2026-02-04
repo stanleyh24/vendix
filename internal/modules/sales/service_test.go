@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"vendix/internal/config"
-	"vendix/internal/database"
-	"vendix/internal/testutil"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/testutil"
 )
 
 func mustPtr[T any](v T) *T { return &v }

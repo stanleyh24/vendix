@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/database"
 
 	"github.com/google/uuid"
 )

@@ -70,7 +70,6 @@ bash scripts/create-test-tenant.sh
 ### 3️⃣ Abrir la Aplicación
 
 - **Frontend:** http://localhost:3000
-- **API Docs:** http://localhost:8080/swagger/index.html
 - **MinIO Console:** http://localhost:9001
 
 ### 4️⃣ Desarrollar
@@ -257,7 +256,7 @@ vim internal/auth/service.go
 ## 🔍 Estructura de Archivos de Desarrollo
 
 ```
-vendix/
+github.com/stanleyh24/vendix/
 ├── 🚀 START_HERE.md              ← Lee esto primero
 ├── 📖 QUICK_START.md             ← Inicio rápido
 ├── 🔧 DEV_SETUP.md               ← Setup completo

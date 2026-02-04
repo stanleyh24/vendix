@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"vendix/internal/config"
-	"vendix/internal/database"
-	"vendix/internal/logger"
-	"vendix/internal/modules/accounting"
-	"vendix/internal/modules/creditnotes"
-	"vendix/internal/modules/products"
-	"vendix/internal/modules/sales"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/modules/accounting"
+	"github.com/stanleyh24/vendix/internal/modules/creditnotes"
+	"github.com/stanleyh24/vendix/internal/modules/products"
+	"github.com/stanleyh24/vendix/internal/modules/sales"
 
 	"github.com/google/uuid"
 )

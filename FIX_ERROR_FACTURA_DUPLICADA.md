@@ -245,7 +245,7 @@ Si el problema persiste:
 
 1. **Verifica los logs del backend**:
    ```bash
-   tail -f /home/scorpion/desa/Projects/vendix/tmp/app.log
+   tail -f /home/scorpion/desa/Projects/github.com/stanleyh24/vendix/tmp/app.log
    ```
 
 2. **Verifica el estado de la base de datos**:

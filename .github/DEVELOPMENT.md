@@ -266,7 +266,6 @@ make fmt
 cd frontend && npm run lint
 
 # 4. Actualizar documentación si es necesario
-make swagger
 
 # 5. Probar build de producción
 make docker-up

@@ -102,7 +102,7 @@ Se agregó la migración v15 que crea la tabla `tenant_config` con los siguiente
 Las rutas fueron registradas en `internal/server/server.go`:
 
 ```go
-import "vendix/internal/modules/tenantconfig"
+import "github.com/stanleyh24/vendix/internal/modules/tenantconfig"
 
 // En setupRoutes(), después de protected := tenant.Group("")
 tenantconfig.RegisterRoutes(protected, s.DB)

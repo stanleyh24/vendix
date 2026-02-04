@@ -253,10 +253,10 @@ http://localhost:3000
 ### Documentación
 
 1. **Guía completa de colores:**  
-   `/home/scorpion/desa/Projects/vendix/frontend/src/styles/COLOR_PALETTE.md`
+   `/home/scorpion/desa/Projects/github.com/stanleyh24/vendix/frontend/src/styles/COLOR_PALETTE.md`
 
 2. **Detalles de implementación:**  
-   `/home/scorpion/desa/Projects/vendix/frontend/IMPLEMENTACION_PALETA_COLORES.md`
+   `/home/scorpion/desa/Projects/github.com/stanleyh24/vendix/frontend/IMPLEMENTACION_PALETA_COLORES.md`
 
 3. **Guía visual interactiva:**  
    `http://localhost:3000/style-guide` (después de login)

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/config"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"

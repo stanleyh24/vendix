@@ -88,7 +88,6 @@ Documentación
 
 README.md con instrucciones para ejecutar localmente.
 
-API documentation (OpenAPI/Swagger).
 
 Guía de cómo crear un tenant, cómo ejecutar migraciones en un schema nuevo, y cómo configurar Stripe/DGII (señalar que DGII real requiere credenciales).
 

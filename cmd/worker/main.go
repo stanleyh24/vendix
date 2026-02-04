@@ -6,10 +6,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"vendix/internal/config"
-	"vendix/internal/database"
-	"vendix/internal/jobs"
-	"vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/jobs"
+	"github.com/stanleyh24/vendix/internal/logger"
 
 	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"

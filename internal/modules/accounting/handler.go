@@ -3,9 +3,9 @@ package accounting
 import (
 	"strings"
 
-	"vendix/internal/config"
-	"vendix/internal/database"
-	"vendix/internal/middleware"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/middleware"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"

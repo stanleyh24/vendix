@@ -1,8 +1,8 @@
 package tenantconfig
 
 import (
-	"vendix/internal/database"
-	"vendix/internal/middleware"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )

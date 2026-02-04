@@ -1,36 +1,34 @@
 package server
 
 import (
-	"vendix/internal/config"
-	"vendix/internal/database"
-	"vendix/internal/middleware"
-	"vendix/internal/modules/accounting"
-	"vendix/internal/modules/auth"
-	"vendix/internal/modules/cashregisters"
-	"vendix/internal/modules/creditnotes"
-	"vendix/internal/modules/customers"
-	"vendix/internal/modules/employees"
-	"vendix/internal/modules/invoices"
-	"vendix/internal/modules/notifications"
-	"vendix/internal/modules/payments"
-	"vendix/internal/modules/payroll"
-	"vendix/internal/modules/products"
-	"vendix/internal/modules/purchases"
-	"vendix/internal/modules/reports"
-	"vendix/internal/modules/returns"
-	"vendix/internal/modules/sales"
-	"vendix/internal/modules/suppliers"
-	"vendix/internal/modules/tenantconfig"
-	"vendix/internal/modules/tenants"
-	"vendix/internal/modules/webhooks"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/middleware"
+	"github.com/stanleyh24/vendix/internal/modules/accounting"
+	"github.com/stanleyh24/vendix/internal/modules/auth"
+	"github.com/stanleyh24/vendix/internal/modules/cashregisters"
+	"github.com/stanleyh24/vendix/internal/modules/creditnotes"
+	"github.com/stanleyh24/vendix/internal/modules/customers"
+	"github.com/stanleyh24/vendix/internal/modules/employees"
+	"github.com/stanleyh24/vendix/internal/modules/invoices"
+	"github.com/stanleyh24/vendix/internal/modules/notifications"
+	"github.com/stanleyh24/vendix/internal/modules/payments"
+	"github.com/stanleyh24/vendix/internal/modules/payroll"
+	"github.com/stanleyh24/vendix/internal/modules/products"
+	"github.com/stanleyh24/vendix/internal/modules/purchases"
+	"github.com/stanleyh24/vendix/internal/modules/reports"
+	"github.com/stanleyh24/vendix/internal/modules/returns"
+	"github.com/stanleyh24/vendix/internal/modules/sales"
+	"github.com/stanleyh24/vendix/internal/modules/suppliers"
+	"github.com/stanleyh24/vendix/internal/modules/tenantconfig"
+	"github.com/stanleyh24/vendix/internal/modules/tenants"
+	"github.com/stanleyh24/vendix/internal/modules/webhooks"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
-
-	swagger "github.com/swaggo/fiber-swagger"
 )
 
 type Server struct {
@@ -76,9 +74,6 @@ func (s *Server) setupRoutes() {
 			"app":    s.Config.AppName,
 		})
 	})
-
-	// Swagger documentation
-	s.Get("/swagger/*", swagger.WrapHandler)
 
 	// API v1
 	api := s.Group("/api/v1")

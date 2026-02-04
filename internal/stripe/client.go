@@ -1,7 +1,7 @@
 package stripe
 
 import (
-	"vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/config"
 
 	"github.com/stripe/stripe-go/v76"
 	"github.com/stripe/stripe-go/v76/customer"

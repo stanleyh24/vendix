@@ -76,7 +76,6 @@ curl -X POST http://localhost:8080/api/v1/tenant/auth/register \
 ## 6️⃣ Abrir la Aplicación
 
 🌐 **Frontend:** http://localhost:3000  
-📚 **API Docs:** http://localhost:8080/swagger/index.html  
 📦 **MinIO:** http://localhost:9001 (minioadmin / minioadmin)
 
 ## 🎯 Ahora Puedes Desarrollar

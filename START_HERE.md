@@ -148,7 +148,6 @@ Después de ejecutar `make dev-up`:
 |----------|-----|--------------|
 | **Frontend** | http://localhost:3000 | - |
 | **API** | http://localhost:8080 | - |
-| **Swagger** | http://localhost:8080/swagger/index.html | - |
 | **MinIO** | http://localhost:9001 | minioadmin / minioadmin |
 | **PostgreSQL** | localhost:5432 | postgres / postgres |
 | **Redis** | localhost:6379 | - |

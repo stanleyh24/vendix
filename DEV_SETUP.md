@@ -178,7 +178,6 @@ make dev-rebuild
 
 - **Frontend:** http://localhost:3000
 - **API:** http://localhost:8080
-- **Swagger:** http://localhost:8080/swagger/index.html
 - **MinIO Console:** http://localhost:9001
 - **PostgreSQL:** localhost:5432
 - **Redis:** localhost:6379

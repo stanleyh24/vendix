@@ -19,7 +19,6 @@ A complete SaaS billing and electronic invoicing system designed specifically fo
 - **Role-Based Access Control (RBAC)**: Admin, Accountant, Billing Clerk, and Viewer roles
 - **Plan-Based Features**: Module access control based on subscription plans
 - **Background Jobs**: Asynchronous processing for invoicing, emails, and DGII submission
-- **RESTful API**: Comprehensive API with Swagger documentation
 - **Rate Limiting**: Per-tenant and per-user rate limiting
 - **Audit Logging**: Immutable audit trails for all operations
 
@@ -38,7 +37,7 @@ A complete SaaS billing and electronic invoicing system designed specifically fo
 ### Project Structure
 
 ```
-vendix/
+github.com/stanleyh24/vendix/
 ├── cmd/
 │   ├── api/          # API server entry point
 │   └── worker/       # Background worker entry point
@@ -63,7 +62,6 @@ vendix/
 │   └── server/       # HTTP server setup
 ├── frontend/         # React frontend application
 ├── scripts/          # Utility scripts
-├── docs/            # Documentation and Swagger specs
 ├── .github/         # CI/CD workflows
 ├── docker-compose.yml
 ├── Dockerfile
@@ -114,7 +112,6 @@ make dev-logs
 **Access the application:**
 - Frontend: http://localhost:3000
 - API: http://localhost:8080
-- Swagger: http://localhost:8080/swagger/index.html
 - MinIO Console: http://localhost:9001
 
 **Stop development environment:**
@@ -162,7 +159,6 @@ bash scripts/create-test-tenant.sh
 5. **Access the application**
 - Frontend: http://localhost:3000
 - API: http://localhost:8080
-- API Documentation: http://localhost:8080/swagger/index.html
 - MinIO Console: http://localhost:9001
 
 ### Running Locally Without Docker (Advanced)
@@ -313,7 +309,6 @@ make test                # Run tests
 make test-coverage       # Tests with coverage
 make lint                # Run linter
 make fmt                 # Format code
-make swagger             # Generate Swagger docs
 ```
 
 **Database:**
@@ -330,7 +325,6 @@ make help
 ## 🌐 API Documentation
 
 Once the API server is running, visit:
-- Swagger UI: http://localhost:8080/swagger/index.html
 
 Key API endpoints:
 - `POST /api/v1/public/tenants` - Create tenant

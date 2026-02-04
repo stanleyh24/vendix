@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/database"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"

@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"vendix/internal/database"
-	"vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/logger"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"

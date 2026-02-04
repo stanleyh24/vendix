@@ -460,6 +460,5 @@ ADD COLUMN IF NOT EXISTS is_returnable BOOLEAN DEFAULT true;
 5. ⏳ Crear endpoints API
 6. ⏳ Implementar frontend
 7. ⏳ Agregar reportes de devoluciones
-8. ⏳ Documentar API con Swagger
 9. ⏳ Tests unitarios e integración
 

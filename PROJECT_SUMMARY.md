@@ -156,7 +156,6 @@ This document provides a comprehensive overview of the completed SaaS electronic
 **Developer Documentation:**
 - ✅ **ARCHITECTURE.md**: Complete architecture documentation
 - ✅ **PROJECT_SUMMARY.md**: This file
-- ✅ Swagger/OpenAPI annotations in code
 - ✅ Inline code documentation
 
 ## 🚀 How to Run
@@ -176,7 +175,6 @@ bash scripts/create-test-tenant.sh
 # 4. Access the application
 # Frontend: http://localhost:3000
 # API: http://localhost:8080
-# Swagger: http://localhost:8080/swagger/index.html
 ```
 
 ### Manual Development
@@ -198,7 +196,7 @@ cd frontend && npm install && npm run dev
 ## 📁 Project Structure
 
 ```
-vendix/
+github.com/stanleyh24/vendix/
 ├── cmd/
 │   ├── api/              # API server
 │   └── worker/           # Background worker
@@ -274,7 +272,6 @@ vendix/
 - Makefile automation
 - CI/CD pipeline
 - Structured logging
-- API documentation (Swagger)
 
 ## 📊 Database Overview
 
@@ -342,7 +339,6 @@ While the core system is complete and functional, here are areas for future enha
 4. **Advanced Reports**: More detailed analytics and exports
 5. **Real DGII Adapter**: Production DGII integration
 6. **Mobile App**: React Native mobile application
-7. **API Documentation**: Complete Swagger specs
 8. **Performance Optimization**: Caching, query optimization
 9. **Advanced Security**: 2FA, IP whitelisting
 10. **Internationalization**: Multi-language support

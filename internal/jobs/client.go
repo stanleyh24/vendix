@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/config"
 
 	"github.com/hibiken/asynq"
 )

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/config"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"

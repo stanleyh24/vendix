@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/logger"
 
 	"github.com/stripe/stripe-go/v76"
 	"github.com/stripe/stripe-go/v76/webhook"

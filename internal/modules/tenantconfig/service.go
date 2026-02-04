@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"vendix/internal/database"
-	"vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/logger"
 )
 
 type Service struct {

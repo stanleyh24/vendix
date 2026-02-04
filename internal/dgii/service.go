@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"vendix/internal/config"
-	"vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/logger"
 )
 
 // Service provides DGII compliance operations

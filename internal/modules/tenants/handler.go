@@ -1,8 +1,8 @@
 package tenants
 
 import (
-	"vendix/internal/config"
-	"vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
 
 	"github.com/gofiber/fiber/v2"
 )

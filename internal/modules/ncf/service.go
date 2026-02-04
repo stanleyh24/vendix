@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"vendix/internal/database"
-	"vendix/internal/logger"
-	"vendix/internal/modules/tenantconfig"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/modules/tenantconfig"
 )
 
 // NCFType represents the type of fiscal document

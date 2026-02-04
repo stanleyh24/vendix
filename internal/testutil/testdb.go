@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"vendix/internal/config"
-	"vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
 )
 
 // NewTestDB loads config from env and returns a connected DB for tests.

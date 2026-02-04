@@ -9,34 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"vendix/internal/config"
-	"vendix/internal/database"
-	"vendix/internal/logger"
-	"vendix/internal/server"
-
-	_ "vendix/docs" // Swagger documentation
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/server"
 
 	"github.com/joho/godotenv"
 )
-
-// @title Vendix API
-// @version 1.0
-// @description Electronic Billing SaaS for Dominican Republic
-// @termsOfService http://swagger.io/terms/
-
-// @contact.name API Support
-// @contact.email support@billing.example.com
-
-// @license.name MIT
-// @license.url https://opensource.org/licenses/MIT
-
-// @host localhost:8080
-// @BasePath /api/v1
-
-// @securityDefinitions.apikey BearerAuth
-// @in header
-// @name Authorization
-// @description Type "Bearer" followed by a space and JWT token.
 
 func main() {
 	// Load environment variables

@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"time"
 
-	"vendix/internal/config"
-	"vendix/internal/database"
-	"vendix/internal/logger"
-	"vendix/internal/modules/creditnotes"
-	"vendix/internal/modules/invoices"
-	"vendix/internal/modules/payments"
-	"vendix/internal/modules/products"
-	"vendix/internal/modules/purchases"
-	"vendix/internal/modules/returns"
-	"vendix/internal/modules/sales"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/modules/creditnotes"
+	"github.com/stanleyh24/vendix/internal/modules/invoices"
+	"github.com/stanleyh24/vendix/internal/modules/payments"
+	"github.com/stanleyh24/vendix/internal/modules/products"
+	"github.com/stanleyh24/vendix/internal/modules/purchases"
+	"github.com/stanleyh24/vendix/internal/modules/returns"
+	"github.com/stanleyh24/vendix/internal/modules/sales"
 )
 
 type Service struct {

@@ -1,9 +1,9 @@
 package webhooks
 
 import (
-	"vendix/internal/config"
-	"vendix/internal/database"
-	"vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/logger"
 
 	"github.com/gofiber/fiber/v2"
 )

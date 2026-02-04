@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"vendix/internal/config"
-	"vendix/internal/database"
-	"vendix/internal/dgii"
-	"vendix/internal/logger"
-	"vendix/internal/modules/notifications"
-	"vendix/internal/modules/tenants"
+	"github.com/stanleyh24/vendix/internal/config"
+	"github.com/stanleyh24/vendix/internal/database"
+	"github.com/stanleyh24/vendix/internal/dgii"
+	"github.com/stanleyh24/vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/modules/notifications"
+	"github.com/stanleyh24/vendix/internal/modules/tenants"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"

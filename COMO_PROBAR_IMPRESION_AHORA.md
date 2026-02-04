@@ -16,7 +16,7 @@ cd /home/scorpion/desa/Projects/vendix
 make dev
 
 # Terminal 2 - Frontend
-cd /home/scorpion/desa/Projects/vendix/frontend
+cd /home/scorpion/desa/Projects/github.com/stanleyh24/vendix/frontend
 npm run dev
 ```
 

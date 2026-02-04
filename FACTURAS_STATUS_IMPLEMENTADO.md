@@ -345,9 +345,7 @@ make run
 curl -X GET http://localhost:8080/health
 ```
 
-### **3. Acceder a Swagger**
 ```
-http://localhost:8080/swagger/
 ```
 
 ---

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/logger"
 )
 
 // Migration represents a database migration
