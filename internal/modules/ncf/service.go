@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/stanleyh24/vendix/internal/config"
 	"github.com/stanleyh24/vendix/internal/database"
 	"github.com/stanleyh24/vendix/internal/logger"
 	"github.com/stanleyh24/vendix/internal/modules/tenantconfig"
@@ -39,20 +40,22 @@ type NCFInfo struct {
 type Service struct {
 	db         *database.DB
 	configRepo *tenantconfig.Repository
+	cfg        *config.Config
 }
 
 // NewService creates a new NCF service
-func NewService(db *database.DB) *Service {
+func NewService(db *database.DB, cfg *config.Config) *Service {
 	return &Service{
 		db:         db,
 		configRepo: tenantconfig.NewRepository(db),
+		cfg:        cfg,
 	}
 }
 
 // GenerateNCF generates the next NCF for a given type
 func (s *Service) GenerateNCF(ctx context.Context, schema string, ncfType NCFType) (*NCFInfo, error) {
 	// Get tenant config
-	configService := tenantconfig.NewService(s.db)
+	configService := tenantconfig.NewService(s.db, s.cfg)
 	config, err := configService.Get(ctx, schema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant config: %w", err)
@@ -114,7 +117,7 @@ func (s *Service) GenerateNCF(ctx context.Context, schema string, ncfType NCFTyp
 
 	// Generate full NCF: Prefix + Type + 11 digits (sequence padded)
 	fullNCF := s.buildNCF(*prefix, string(ncfType), sequence)
-	
+
 	// Increment sequence in database (within a transaction to ensure atomicity)
 	newSequence := sequence + 1
 	if err := s.incrementNCFSequence(ctx, schema, ncfType, newSequence); err != nil {
@@ -155,7 +158,7 @@ func (s *Service) formatNCF(ncf string) string {
 func (s *Service) ValidateNCF(ncf string) error {
 	// Remove dashes and spaces
 	cleaned := strings.ReplaceAll(strings.ReplaceAll(ncf, "-", ""), " ", "")
-	
+
 	// Basic format validation: should be at least 16 characters (prefix + type + sequence)
 	if len(cleaned) < 16 {
 		return fmt.Errorf("NCF format invalid: too short (expected at least 16 characters)")
@@ -235,24 +238,24 @@ func validateRNCChecksum(rnc string) bool {
 	// Simplified validation - in production, implement full DGII algorithm
 	// For now, just check it's numeric and has correct length
 	digits := strings.Split(rnc, "")
-	
+
 	// Calculate weighted sum
 	weights := []int{7, 9, 8, 6, 5, 4, 3, 2}
 	sum := 0
-	
+
 	for i := 0; i < len(digits)-1 && i < len(weights); i++ {
 		digit, _ := strconv.Atoi(digits[i])
 		sum += digit * weights[i]
 	}
-	
+
 	checkDigit, _ := strconv.Atoi(digits[len(digits)-1])
 	remainder := sum % 11
-	
+
 	// Special case: if remainder is 0 or 1, check digit should be 0 or 1
 	if remainder <= 1 {
 		return checkDigit == remainder
 	}
-	
+
 	expectedCheck := 11 - remainder
 	return checkDigit == expectedCheck
 }
@@ -305,13 +308,12 @@ func (s *Service) incrementNCFSequence(ctx context.Context, schema string, ncfTy
 		return fmt.Errorf("unsupported NCF type: %s", ncfType)
 	}
 
-	configService := tenantconfig.NewService(s.db)
+	configService := tenantconfig.NewService(s.db, s.cfg)
 	_, err := configService.Update(ctx, schema, updateReq)
 	return err
 }
 
-
-// getNCFEndRange gets the end range for an NCF type  
+// getNCFEndRange gets the end range for an NCF type
 func getNCFEndRange(config *tenantconfig.TenantConfig, ncfField string) int {
 	// Read from database directly since these fields may not be in the model yet
 	// For now, default to 999999999 - the actual implementation should read from tenant_config table
@@ -344,4 +346,3 @@ func GetNCFTypeFromString(s string) (NCFType, error) {
 		return "", fmt.Errorf("invalid NCF type: %s", s)
 	}
 }
-

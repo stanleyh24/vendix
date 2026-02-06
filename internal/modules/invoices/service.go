@@ -47,7 +47,7 @@ func NewService(db *database.DB, cfg *config.Config) (*Service, error) {
 		customersRepo: customers.NewRepository(db),
 		storage:       storageClient,
 		dgiiService:   dgii.NewService(cfg),
-		ncfService:    ncf.NewService(db),
+		ncfService:    ncf.NewService(db, cfg),
 		configRepo:    tenantconfig.NewRepository(db),
 		cfg:           cfg,
 	}, nil
@@ -57,7 +57,7 @@ func NewService(db *database.DB, cfg *config.Config) (*Service, error) {
 func (s *Service) getStorageClientForTenant(ctx context.Context, schema string) (*storage.Client, error) {
 	// Build bucket name for tenant
 	bucketName := storage.BuildTenantBucketName(schema)
-	
+
 	// Create or get client with tenant bucket
 	// If we already have a client, we can switch its bucket
 	if s.storage != nil {
@@ -68,7 +68,7 @@ func (s *Service) getStorageClientForTenant(ctx context.Context, schema string) 
 		}
 		return tenantClient, nil
 	}
-	
+
 	return nil, fmt.Errorf("storage client not initialized")
 }
 
@@ -207,7 +207,7 @@ func (s *Service) Create(ctx context.Context, schema string, req *CreateInvoiceR
 	// Calcular retención si el cliente es gubernamental y no está exento
 	if !isGenericCustomer && customer != nil && customer.IsGovernmentEntity && !invoice.WithholdingExempt && ncfType == "15" {
 		withholdingRate := 0.05 // 5% ISR por defecto
-		
+
 		// Usar tasa del request si está especificada
 		if req.WithholdingRate != nil && *req.WithholdingRate > 0 {
 			withholdingRate = *req.WithholdingRate
@@ -661,10 +661,10 @@ func (s *Service) invoiceToElectronicDocument(ctx context.Context, schema string
 			Currency:  invoice.Currency,
 		},
 		Metadata: map[string]interface{}{
-			"invoice_id":      invoice.ID.String(),
-			"invoice_number":  invoice.InvoiceNumber,
-			"ncf_type":        invoice.NCFType,
-			"payment_type":    "cash", // Default, should be inferred from payments
+			"invoice_id":     invoice.ID.String(),
+			"invoice_number": invoice.InvoiceNumber,
+			"ncf_type":       invoice.NCFType,
+			"payment_type":   "cash", // Default, should be inferred from payments
 		},
 	}
 
@@ -824,7 +824,7 @@ func (s *Service) AllocatePayment(ctx context.Context, schema string, req *Creat
 		// Calculate current balance
 		currentBalance := invoice.Total - invoice.PaidAmount
 		if allocReq.Amount > currentBalance {
-			return fmt.Errorf("allocation amount (%.2f) exceeds invoice balance (%.2f) for invoice %s", 
+			return fmt.Errorf("allocation amount (%.2f) exceeds invoice balance (%.2f) for invoice %s",
 				allocReq.Amount, currentBalance, invoice.InvoiceNumber)
 		}
 

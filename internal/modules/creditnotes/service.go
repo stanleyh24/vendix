@@ -40,7 +40,7 @@ func NewService(db *database.DB, cfg *config.Config) (*Service, error) {
 		invoicesRepo: invoices.NewRepository(db),
 		storage:      storageClient,
 		dgiiService:  dgii.NewService(cfg),
-		ncfService:   ncf.NewService(db),
+		ncfService:   ncf.NewService(db, cfg),
 		configRepo:   tenantconfig.NewRepository(db),
 		cfg:          cfg,
 	}, nil
@@ -358,8 +358,8 @@ func (s *Service) creditNoteToElectronicDocument(ctx context.Context, schema str
 			Currency:  creditNote.Currency,
 		},
 		Metadata: map[string]interface{}{
-			"credit_note_id":      creditNote.ID.String(),
-			"credit_note_number":  creditNote.CreditNoteNumber,
+			"credit_note_id":     creditNote.ID.String(),
+			"credit_note_number": creditNote.CreditNoteNumber,
 			"original_invoice_id": func() string {
 				if creditNote.OriginalInvoiceID != nil {
 					return creditNote.OriginalInvoiceID.String()

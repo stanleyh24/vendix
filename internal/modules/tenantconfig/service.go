@@ -7,18 +7,24 @@ import (
 	"fmt"
 	"time"
 
+	"io"
+
+	"github.com/stanleyh24/vendix/internal/config"
 	"github.com/stanleyh24/vendix/internal/database"
 	"github.com/stanleyh24/vendix/internal/logger"
+	"github.com/stanleyh24/vendix/internal/storage"
 )
 
 type Service struct {
 	repo *Repository
+	cfg  *config.Config
 }
 
 // NewService creates a new tenant config service
-func NewService(db *database.DB) *Service {
+func NewService(db *database.DB, cfg *config.Config) *Service {
 	return &Service{
 		repo: NewRepository(db),
+		cfg:  cfg,
 	}
 }
 
@@ -216,4 +222,40 @@ func (s *Service) Update(ctx context.Context, schema string, req *UpdateTenantCo
 	logger.Info("Tenant config updated successfully")
 
 	return config, nil
+}
+
+// UploadLogo uploads a logo file to storage and updates the configuration
+func (s *Service) UploadLogo(ctx context.Context, schema string, file io.Reader, filename string, contentType string, size int64) (string, error) {
+	// 1. Initialize storage
+	storageClient, err := storage.NewClient(s.cfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize storage: %w", err)
+	}
+
+	// 2. Build object key
+	objectKey := fmt.Sprintf("tenants/%s/branding/logo_%d_%s", schema, time.Now().Unix(), filename)
+
+	// 3. Upload
+	err = storageClient.UploadFile(ctx, file, objectKey, contentType, size)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload logo: %w", err)
+	}
+
+	// 4. Generate URL
+	// For now we use a pre-signed URL with long expiry (1 year).
+	url, err := storageClient.PresignedURL(ctx, objectKey, 365*24*time.Hour)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate URL: %w", err)
+	}
+
+	// 5. Update configuration
+	req := &UpdateTenantConfigRequest{
+		LogoURL: &url,
+	}
+	_, err = s.Update(ctx, schema, req)
+	if err != nil {
+		return "", fmt.Errorf("failed to update config with logo URL: %w", err)
+	}
+
+	return url, nil
 }

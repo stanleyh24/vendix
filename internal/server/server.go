@@ -107,7 +107,7 @@ func (s *Server) setupRoutes() {
 	}
 
 	// Tenant configuration
-	tenantconfig.RegisterRoutes(protected, s.DB)
+	tenantconfig.RegisterRoutes(protected, s.DB, s.Config)
 
 	// Customer management
 	customers.RegisterRoutes(protected, s.DB, s.Config)

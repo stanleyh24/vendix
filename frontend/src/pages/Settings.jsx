@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../lib/api'
 import Alert from '../components/Alert'
+import { Upload, Home, Info, ShieldCheck, FileText, Bell, Globe } from 'lucide-react'
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('company')
@@ -15,6 +16,7 @@ export default function Settings() {
     company_email: '',
     company_phone: '',
     company_website: '',
+    logo_url: '',
 
     // Address
     address_line1: '',
@@ -66,11 +68,6 @@ export default function Settings() {
     send_invoice_emails: true,
     send_payment_reminders: true,
 
-    // Branding
-    logo_url: '',
-    primary_color: '#3B82F6',
-    secondary_color: '#10B981',
-
     // Localization
     timezone: 'America/Santo_Domingo',
     date_format: 'DD/MM/YYYY',
@@ -119,17 +116,13 @@ export default function Settings() {
         default_tax_rate: data.default_tax_rate || 18.00,
         send_invoice_emails: data.send_invoice_emails !== undefined ? data.send_invoice_emails : true,
         send_payment_reminders: data.send_payment_reminders !== undefined ? data.send_payment_reminders : true,
-        primary_color: data.primary_color || '#3B82F6',
-        secondary_color: data.secondary_color || '#10B981',
-        timezone: data.timezone || 'America/Santo_Domingo',
-        date_format: data.date_format || 'DD/MM/YYYY',
-        time_format: data.time_format || 'HH:mm',
         locale: data.locale || 'es_DO',
+        logo_url: data.logo_url || '',
       })
     } catch (error) {
       console.error('Error loading config:', error)
-      setAlert({ 
-        type: 'error', 
+      setAlert({
+        type: 'error',
         message: error.response?.data?.error || 'Error al cargar la configuración'
       })
     } finally {
@@ -148,9 +141,38 @@ export default function Settings() {
       await api.put('/config', config)
       setAlert({ type: 'success', message: 'Configuración guardada exitosamente' })
     } catch (error) {
-      setAlert({ 
-        type: 'error', 
-        message: error.response?.data?.error || 'Error al guardar la configuración' 
+      setAlert({
+        type: 'error',
+        message: error.response?.data?.error || 'Error al guardar la configuración'
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    const formData = new FormData()
+    formData.append('logo', file)
+
+    try {
+      setSaving(true)
+      const response = await api.post('/config/logo', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+
+      const newLogoUrl = response.data.logo_url
+      handleChange('logo_url', newLogoUrl)
+      setAlert({ type: 'success', message: 'Logo subido y guardado exitosamente' })
+    } catch (error) {
+      console.error('Error uploading logo:', error)
+      setAlert({
+        type: 'error',
+        message: error.response?.data?.error || 'Error al subir el logo'
       })
     } finally {
       setSaving(false)
@@ -163,7 +185,6 @@ export default function Settings() {
     { id: 'invoicing', label: 'Facturación' },
     { id: 'ncf', label: 'NCF (DGII)' },
     { id: 'notifications', label: 'Notificaciones' },
-    { id: 'branding', label: 'Identidad Visual' },
   ]
 
   if (loading) {
@@ -301,6 +322,60 @@ export default function Settings() {
                       placeholder="https://www.miempresa.com"
                     />
                   </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-[#212121] mb-2">
+                      Logo de la Empresa
+                    </label>
+                    <div className="flex flex-col md:flex-row gap-6 items-start bg-[#F5F5F5] p-6 rounded-xl border-2 border-dashed border-gray-200">
+                      <div className="flex-shrink-0">
+                        {config.logo_url ? (
+                          <div className="relative group">
+                            <div className="w-32 h-32 bg-white rounded-lg border border-gray-200 flex items-center justify-center p-2 overflow-hidden shadow-sm">
+                              <img
+                                src={config.logo_url}
+                                alt="Logo empresa"
+                                className="max-w-full max-h-full object-contain"
+                                onError={(e) => e.target.src = 'https://via.placeholder.com/128?text=Error'}
+                              />
+                            </div>
+                            <div className="absolute inset-0 bg-black bg-opacity-40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                              <label className="cursor-pointer text-white text-xs font-bold bg-[#FF6B00] px-3 py-1 rounded-full shadow-lg">
+                                Cambiar
+                                <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                              </label>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="w-32 h-32 bg-white rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-[#FF6B00] hover:bg-orange-50 transition-all group shadow-sm">
+                            <Upload className="w-8 h-8 text-gray-400 group-hover:text-[#FF6B00] mb-2" />
+                            <span className="text-xs text-gray-500 group-hover:text-[#FF6B00] font-medium">Subir Imagen</span>
+                            <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                          </label>
+                        )}
+                      </div>
+
+                      <div className="flex-1">
+                        <h4 className="text-sm font-bold text-[#212121] mb-1">Carga tu logotipo oficial</h4>
+                        <p className="text-xs text-gray-600 mb-4">
+                          Sube el logo de tu empresa para que aparezca automáticamente en todas tus facturas y documentos oficiales.
+                        </p>
+                        <div className="flex flex-col gap-3">
+                          <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">O vincula mediante URL:</label>
+                          <input
+                            type="url"
+                            value={config.logo_url || ''}
+                            onChange={(e) => handleChange('logo_url', e.target.value)}
+                            className="input-field bg-white text-sm py-2"
+                            placeholder="https://www.tuempresa.com/logo.png"
+                          />
+                        </div>
+                        <p className="mt-3 text-[11px] text-gray-400 italic">
+                          💡 Formatos recomendados: PNG o JPG. Tamaño ideal: 512x512px.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -374,22 +449,6 @@ export default function Settings() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-[#212121] mb-2">
-                      País
-                    </label>
-                    <select
-                      value={config.country}
-                      onChange={(e) => handleChange('country', e.target.value)}
-                      className="input-field"
-                    >
-                      <option value="DO">🇩🇴 República Dominicana</option>
-                      <option value="US">🇺🇸 Estados Unidos</option>
-                      <option value="ES">🇪🇸 España</option>
-                      <option value="MX">🇲🇽 México</option>
-                      <option value="CO">🇨🇴 Colombia</option>
-                    </select>
-                  </div>
                 </div>
               </div>
             </div>
@@ -958,154 +1017,7 @@ export default function Settings() {
             </div>
           )}
 
-          {activeTab === 'branding' && (
-            <div className="space-y-8">
-              <div>
-                <h2 className="text-xl font-bold text-[#212121] mb-6 flex items-center gap-2">
-                  🎨 Identidad Visual
-                </h2>
-                <div>
-                  <label className="block text-sm font-semibold text-[#212121] mb-2">
-                    URL del Logo
-                  </label>
-                  <input
-                    type="url"
-                    value={config.logo_url || ''}
-                    onChange={(e) => handleChange('logo_url', e.target.value)}
-                    className="input-field"
-                    placeholder="https://ejemplo.com/logo.png"
-                  />
-                  <p className="mt-2 text-xs text-gray-500">
-                    💡 URL pública del logo de tu empresa (aparecerá en facturas)
-                  </p>
-                </div>
-              </div>
 
-              <div className="pt-6 border-t border-gray-200">
-                <h2 className="text-xl font-bold text-[#212121] mb-6 flex items-center gap-2">
-                  🎨 Colores de Marca
-                </h2>
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-semibold text-[#212121] mb-2">
-                      Color Primario
-                    </label>
-                    <div className="flex gap-3">
-                      <input
-                        type="color"
-                        value={config.primary_color}
-                        onChange={(e) => handleChange('primary_color', e.target.value)}
-                        className="h-12 w-16 rounded-lg border-2 border-gray-300 cursor-pointer shadow-sm hover:border-[#FF6B00] transition-colors"
-                      />
-                      <input
-                        type="text"
-                        value={config.primary_color}
-                        onChange={(e) => handleChange('primary_color', e.target.value)}
-                        className="input-field flex-1 font-mono"
-                        placeholder="#3B82F6"
-                      />
-                    </div>
-                    <div 
-                      className="mt-3 h-10 rounded-lg border-2 border-gray-200" 
-                      style={{ backgroundColor: config.primary_color }}
-                    ></div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-[#212121] mb-2">
-                      Color Secundario
-                    </label>
-                    <div className="flex gap-3">
-                      <input
-                        type="color"
-                        value={config.secondary_color}
-                        onChange={(e) => handleChange('secondary_color', e.target.value)}
-                        className="h-12 w-16 rounded-lg border-2 border-gray-300 cursor-pointer shadow-sm hover:border-[#FF6B00] transition-colors"
-                      />
-                      <input
-                        type="text"
-                        value={config.secondary_color}
-                        onChange={(e) => handleChange('secondary_color', e.target.value)}
-                        className="input-field flex-1 font-mono"
-                        placeholder="#10B981"
-                      />
-                    </div>
-                    <div 
-                      className="mt-3 h-10 rounded-lg border-2 border-gray-200" 
-                      style={{ backgroundColor: config.secondary_color }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-gray-200">
-                <h2 className="text-xl font-bold text-[#212121] mb-6 flex items-center gap-2">
-                  🌍 Localización
-                </h2>
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-semibold text-[#212121] mb-2">
-                      Zona Horaria
-                    </label>
-                    <select
-                      value={config.timezone}
-                      onChange={(e) => handleChange('timezone', e.target.value)}
-                      className="input-field"
-                    >
-                      <option value="America/Santo_Domingo">🇩🇴 América/Santo Domingo</option>
-                      <option value="America/New_York">🇺🇸 América/Nueva York</option>
-                      <option value="America/Los_Angeles">🇺🇸 América/Los Ángeles</option>
-                      <option value="Europe/Madrid">🇪🇸 Europa/Madrid</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-[#212121] mb-2">
-                      Formato de Fecha
-                    </label>
-                    <select
-                      value={config.date_format}
-                      onChange={(e) => handleChange('date_format', e.target.value)}
-                      className="input-field"
-                    >
-                      <option value="DD/MM/YYYY">📅 DD/MM/YYYY (Ej: 19/10/2025)</option>
-                      <option value="MM/DD/YYYY">📅 MM/DD/YYYY (Ej: 10/19/2025)</option>
-                      <option value="YYYY-MM-DD">📅 YYYY-MM-DD (Ej: 2025-10-19)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-[#212121] mb-2">
-                      Formato de Hora
-                    </label>
-                    <select
-                      value={config.time_format}
-                      onChange={(e) => handleChange('time_format', e.target.value)}
-                      className="input-field"
-                    >
-                      <option value="HH:mm">🕐 24 horas (HH:mm)</option>
-                      <option value="hh:mm A">🕐 12 horas (hh:mm AM/PM)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-[#212121] mb-2">
-                      Idioma
-                    </label>
-                    <select
-                      value={config.locale}
-                      onChange={(e) => handleChange('locale', e.target.value)}
-                      className="input-field"
-                    >
-                      <option value="es_DO">🇩🇴 Español (República Dominicana)</option>
-                      <option value="es_ES">🇪🇸 Español (España)</option>
-                      <option value="en_US">🇺🇸 English (United States)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           <div className="flex justify-end gap-3 pt-8 mt-8 border-t border-gray-200">
             <button
