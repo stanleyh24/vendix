@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: vendix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+      - name: worker
+        image: vendix-api:latest # Uses same builder image
+        envFrom:
+        - configMapRef:
+            name: vendix-config
+        env:
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: vendix-secrets
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: vendix-secrets
+              key: DB_PASSWORD
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: vendix-secrets
+              key: S3_ACCESS_KEY
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: vendix-secrets
+              key: S3_SECRET_KEY
+        command: ["./worker"]

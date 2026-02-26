@@ -1,7 +1,13 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
+const getApiUrl = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  if (import.meta.env.PROD) return '' // Use relative path in production for Nginx proxy
+  return 'http://localhost:8080' // Default for local development
+}
+
+const API_URL = getApiUrl()
 
 const api = axios.create({
   baseURL: `${API_URL}/api/v1/tenant`,
@@ -14,15 +20,15 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const { accessToken, tenantId } = useAuthStore.getState()
-    
+
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`
     }
-    
+
     if (tenantId) {
       config.headers['X-Tenant-ID'] = tenantId
     }
-    
+
     return config
   },
   (error) => {

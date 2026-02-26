@@ -39,18 +39,18 @@ clean: ## Clean build artifacts
 # Comandos para PRODUCCIÓN
 docker-up: ## Start Docker containers (PRODUCTION)
 	@echo "Starting Docker containers (PRODUCTION)..."
-	@docker-compose up -d
+	@docker-compose -f docker-compose.prod.yml up -d
 
 docker-down: ## Stop Docker containers (PRODUCTION)
 	@echo "Stopping Docker containers (PRODUCTION)..."
-	@docker-compose down
+	@docker-compose -f docker-compose.prod.yml down
 
 docker-logs: ## Show Docker logs (PRODUCTION)
-	@docker-compose logs -f
+	@docker-compose -f docker-compose.prod.yml logs -f
 
 docker-rebuild: ## Rebuild and restart Docker containers (PRODUCTION)
 	@echo "Rebuilding Docker containers (PRODUCTION)..."
-	@docker-compose up -d --build
+	@docker-compose -f docker-compose.prod.yml up -d --build
 
 # Comandos para DESARROLLO LOCAL con hot-reload
 dev-up: ## Start development environment with hot-reload

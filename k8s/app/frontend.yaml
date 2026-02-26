@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: vendix
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: vendix-frontend:latest # Change to your registry image
+        ports:
+        - containerPort: 3000
+        env:
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: vendix-config
+              key: API_URL
+        - name: NGINX_ENVSUBST_FILTER
+          value: "API_URL"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: vendix
+spec:
+  selector:
+    app: frontend
+  ports:
+  - port: 80
+    targetPort: 3000

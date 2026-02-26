@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vendix-config
+  namespace: vendix
+data:
+  APP_ENV: "production"
+  APP_PORT: "8080"
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_NAME: "vendix"
+  DB_SSL_MODE: "disable"
+  REDIS_ADDR: "redis-service:6379"
+  S3_ENDPOINT: "minio-service:9000"
+  S3_USE_SSL: "false"
+  LOG_LEVEL: "info"
+  API_URL: "https://vendixapi.networktecnologic.com" # Updated to your domain

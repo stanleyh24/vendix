@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: vendix
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+      - name: api
+        image: vendix-api:latest # Change to your registry image
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: vendix-config
+        env:
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: vendix-secrets
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: vendix-secrets
+              key: DB_PASSWORD
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: vendix-secrets
+              key: JWT_SECRET
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: vendix-secrets
+              key: S3_ACCESS_KEY
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: vendix-secrets
+              key: S3_SECRET_KEY
+        command: ["./api"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: vendix
+spec:
+  selector:
+    app: api
+  ports:
+  - port: 80
+    targetPort: 8080

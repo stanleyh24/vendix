@@ -1,28 +1,24 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: vendix-postgres
+    container_name: vendix-postgres-prod
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: vendix
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-vendix}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: always
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: vendix-redis
-    ports:
-      - "6379:6379"
+    container_name: vendix-redis-prod
+    restart: always
     volumes:
       - redis_data:/data
     healthcheck:
@@ -33,16 +29,14 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: vendix-minio
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+    container_name: vendix-minio-prod
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    restart: always
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 30s
@@ -53,73 +47,69 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vendix-api
-    ports:
-      - "8080:8080"
+    container_name: vendix-api-prod
     environment:
-      APP_ENV: development
+      APP_ENV: production
       APP_PORT: 8080
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: vendix
-      DB_SSL_MODE: disable
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-vendix}
+      DB_SSL_MODE: ${DB_SSL_MODE:-disable}
       REDIS_ADDR: redis:6379
       S3_ENDPOINT: minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin
-      S3_USE_SSL: "false"
-      JWT_SECRET: dev-secret-change-in-production
-      LOG_LEVEL: debug
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_USE_SSL: ${S3_USE_SSL:-false}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      LOG_LEVEL: info
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: [ "./api" ]
-    restart: unless-stopped
+    restart: always
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vendix-worker
+    container_name: vendix-worker-prod
     environment:
-      APP_ENV: development
+      APP_ENV: production
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: vendix
-      DB_SSL_MODE: disable
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-vendix}
+      DB_SSL_MODE: ${DB_SSL_MODE:-disable}
       REDIS_ADDR: redis:6379
-      LOG_LEVEL: debug
+      LOG_LEVEL: info
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: [ "./worker" ]
-    restart: unless-stopped
+    restart: always
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: vendix-frontend
+    container_name: vendix-frontend-prod
     ports:
-      - "3000:3000"
+      - "80:3000"
     environment:
-      - API_URL=http://api:8080
+      - API_URL=https://vendixapi.networktecnologic.com
       - NGINX_ENVSUBST_FILTER=API_URL
     depends_on:
       - api
-    restart: unless-stopped
+    restart: always
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
-
-
